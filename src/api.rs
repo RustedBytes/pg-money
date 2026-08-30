@@ -31,8 +31,8 @@ pub(crate) fn money_amount(value: money_with_currency) -> AnyNumeric {
 }
 
 #[pg_extern(immutable, parallel_safe)]
-pub(crate) fn money_currency(value: money_with_currency) -> String {
-    value.currency_code().to_owned()
+pub(crate) fn money_currency(value: money_with_currency) -> &'static str {
+    value.currency_code()
 }
 
 #[pg_extern(immutable, parallel_safe)]

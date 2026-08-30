@@ -29,7 +29,8 @@ Unary `-`, `money_negate`, and `money_abs` are also available.
 `money_round(value, digits, money_rounding)` supports `half_up`, `half_down`,
 and `half_even`. `money_split(value, parts)` and
 `money_allocate(value, positive_integer_weights[])` return arrays whose minor
-units are distributed using `rusty-money`.
+units are distributed using `rusty-money`. Each call is capped at 10,000 output
+parts to prevent a single statement from requesting unbounded backend memory.
 
 `sum(money_with_currency)` and `avg(money_with_currency)` ignore NULLs, return
 NULL for empty groups, and reject mixed currencies.

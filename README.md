@@ -91,11 +91,15 @@ For release-performance checks, install the release build into a disposable
 PostgreSQL instance, set `DATABASE_URL`, and run:
 
 ```bash
-./bench/run.sh 10000 100000 1000000
+BENCH_CLIENTS="4 16 64" BENCH_DURATION=30 ./bench/run.sh \
+  10000 100000 1000000
 ```
 
 The benchmark covers parsing, on-disk size, predicates, arithmetic, formatting,
-SUM/AVG, equality, hashing, ordering, binary COPY, and prepared indexed lookup.
+SUM/AVG, equality, hashing, ordering, binary COPY, prepared indexed lookup, and
+historical exchange lookup. It reports per-command latency and throughput at
+each requested concurrency. Set `BENCH_JOBS` and `BENCH_PROGRESS` to tune the
+pgbench worker count and progress interval.
 
 See [the SQL API](docs/API.md), [binary format](docs/BINARY_FORMAT.md), and
 [exchange-rate contract](docs/EXCHANGE_RATES.md) for details.

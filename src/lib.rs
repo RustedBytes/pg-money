@@ -26,8 +26,8 @@ mod tests;
 // cannot observe as ordinary uses.
 #[allow(unused_imports)]
 use aggregate::{
-    money_aggregate_combinefn, money_aggregate_state, money_aggregate_transfn, money_avg_finalfn,
-    money_sum_finalfn,
+    money_aggregate_combinefn, money_aggregate_deserialfn, money_aggregate_serialfn,
+    money_aggregate_transfn, money_avg_finalfn, money_sum_finalfn,
 };
 #[cfg(not(feature = "fuzzing"))]
 #[allow(unused_imports)]
@@ -74,23 +74,26 @@ extension_sql!(
 
     CREATE AGGREGATE sum(money_with_currency) (
         SFUNC = money_aggregate_transfn,
-        STYPE = money_aggregate_state,
+        STYPE = internal,
         FINALFUNC = money_sum_finalfn,
         COMBINEFUNC = money_aggregate_combinefn,
+        SERIALFUNC = money_aggregate_serialfn,
+        DESERIALFUNC = money_aggregate_deserialfn,
         PARALLEL = SAFE
     );
     CREATE AGGREGATE avg(money_with_currency) (
         SFUNC = money_aggregate_transfn,
-        STYPE = money_aggregate_state,
+        STYPE = internal,
         FINALFUNC = money_avg_finalfn,
         COMBINEFUNC = money_aggregate_combinefn,
+        SERIALFUNC = money_aggregate_serialfn,
+        DESERIALFUNC = money_aggregate_deserialfn,
         PARALLEL = SAFE
     );
     ",
     name = "money_sql_surface",
     requires = [
         money_with_currency,
-        money_aggregate_state,
         money_add,
         money_subtract,
         money_multiply,
@@ -98,6 +101,8 @@ extension_sql!(
         money_negate,
         money_aggregate_transfn,
         money_aggregate_combinefn,
+        money_aggregate_serialfn,
+        money_aggregate_deserialfn,
         money_sum_finalfn,
         money_avg_finalfn
     ]

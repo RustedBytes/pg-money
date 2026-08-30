@@ -5,7 +5,9 @@ use rust_decimal::Decimal;
 use rusty_money::{Money, MoneyError, iso};
 
 pub(crate) fn decimal_from_numeric(input: &AnyNumeric) -> Decimal {
-    parse_decimal(&input.to_string()).unwrap_or_else(|error| fail_parameter(&error))
+    // PostgreSQL already owns the normalized output buffer. Parsing it directly
+    // avoids allocating an intermediate Rust `String` on every numeric operation.
+    parse_decimal(input.normalize()).unwrap_or_else(|error| fail_parameter(&error))
 }
 
 pub(crate) fn numeric_from_decimal(input: Decimal) -> AnyNumeric {

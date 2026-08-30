@@ -4,7 +4,6 @@ use serde::de::Error as _;
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
-use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
@@ -160,7 +159,9 @@ impl money_with_currency {
     }
 
     fn require_same_currency(&self, other: &Self) -> Result<(), MoneyError> {
-        if self.currency_code() == other.currency_code() {
+        // All currencies enter through `iso::find`, so equal currencies share
+        // the same process-static descriptor.
+        if std::ptr::eq(self.currency, other.currency) {
             Ok(())
         } else {
             Err(MoneyError::CurrencyMismatch {
@@ -194,22 +195,35 @@ impl money_with_currency {
 
     pub(crate) fn canonical(&self) -> String {
         let mut output = String::with_capacity(36);
-        output.push_str(self.currency_code());
-        output.push(' ');
-        self.write_canonical_amount(&mut output);
+        self.write_canonical(&mut output);
         output
     }
 
-    fn write_canonical_amount(&self, output: &mut String) {
-        write!(output, "{}", self.amount).expect("writing to a String cannot fail");
+    fn write_canonical(&self, output: &mut impl std::fmt::Write) {
+        output
+            .write_str(self.currency_code())
+            .expect("writing canonical currency cannot fail");
+        output
+            .write_char(' ')
+            .expect("writing canonical separator cannot fail");
+        self.write_canonical_amount(output);
+    }
+
+    fn write_canonical_amount(&self, output: &mut impl std::fmt::Write) {
+        write!(output, "{}", self.amount).expect("writing canonical amount cannot fail");
         let exponent = self.currency.exponent() as usize;
         let scale = self.amount.scale() as usize;
         if exponent > scale {
-            output.reserve(exponent - scale + usize::from(scale == 0));
             if scale == 0 {
-                output.push('.');
+                output
+                    .write_char('.')
+                    .expect("writing canonical decimal point cannot fail");
             }
-            output.extend(std::iter::repeat_n('0', exponent - scale));
+            for _ in 0..exponent - scale {
+                output
+                    .write_char('0')
+                    .expect("writing canonical zero cannot fail");
+            }
         }
     }
 }
@@ -286,6 +300,6 @@ impl InOutFuncs for money_with_currency {
     }
 
     fn output(&self, buffer: &mut StringInfo) {
-        buffer.push_str(&self.canonical());
+        self.write_canonical(buffer);
     }
 }

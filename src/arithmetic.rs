@@ -6,6 +6,8 @@ use pgrx::prelude::*;
 use rust_decimal::{Decimal, RoundingStrategy};
 use rusty_money::MoneyError;
 
+const MAX_ALLOCATION_PARTS: u32 = 10_000;
+
 fn unwrap_value(result: Result<money_with_currency, MoneyError>) -> money_with_currency {
     result.unwrap_or_else(|error| fail_parameter(&error.to_string()))
 }
@@ -98,8 +100,8 @@ pub(crate) fn money_round(
 pub(crate) fn money_split(value: money_with_currency, parts: i32) -> Vec<money_with_currency> {
     let parts = u32::try_from(parts)
         .ok()
-        .filter(|parts| *parts > 0)
-        .unwrap_or_else(|| fail_parameter("parts must be positive"));
+        .filter(|parts| (1..=MAX_ALLOCATION_PARTS).contains(parts))
+        .unwrap_or_else(|| fail_parameter("parts must be between 1 and 10000"));
     value
         .as_money()
         .split(parts)
@@ -114,6 +116,9 @@ pub(crate) fn money_allocate(
     value: money_with_currency,
     weights: Vec<i32>,
 ) -> Vec<money_with_currency> {
+    if weights.len() > MAX_ALLOCATION_PARTS as usize {
+        fail_parameter("allocation accepts at most 10000 weights");
+    }
     let weights = weights
         .into_iter()
         .map(|weight| {

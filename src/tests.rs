@@ -108,6 +108,26 @@ mod tests {
     }
 
     #[pg_test]
+    fn large_aggregate_group_uses_bounded_internal_state() {
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT sum(money_make(g::numeric, 'USD'))::text \
+                 FROM generate_series(1, 100000) AS series(g)"
+            )
+            .unwrap(),
+            Some("USD 5000050000.00".to_owned())
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT avg(money_make(g::numeric, 'USD'))::text \
+                 FROM generate_series(1, 100000) AS series(g)"
+            )
+            .unwrap(),
+            Some("USD 50000.50".to_owned())
+        );
+    }
+
+    #[pg_test]
     fn exchange_direct_and_historical_lookup_work() {
         assert_eq!(
             money_exchange(
@@ -172,6 +192,21 @@ mod tests {
     #[pg_test(error = "Division by zero")]
     fn division_by_zero_is_reported() {
         Spi::run("SELECT 'USD 1'::money_with_currency / 0").unwrap();
+    }
+
+    #[pg_test(error = "parts must be between 1 and 10000")]
+    fn excessive_split_is_rejected_before_allocation() {
+        Spi::run("SELECT money_split('USD 1', 10001)").unwrap();
+    }
+
+    #[pg_test(error = "allocation accepts at most 10000 weights")]
+    fn excessive_allocation_is_rejected() {
+        Spi::run(
+            "SELECT money_allocate(\
+                'USD 1', ARRAY(SELECT 1 FROM generate_series(1, 10001))\
+             )",
+        )
+        .unwrap();
     }
 }
 

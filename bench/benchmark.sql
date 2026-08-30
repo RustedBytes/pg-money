@@ -2,7 +2,8 @@
 \timing on
 
 CREATE EXTENSION IF NOT EXISTS pg_money;
-DROP TABLE IF EXISTS money_bench_raw, money_bench_values, money_bench_copy;
+DROP TABLE IF EXISTS money_bench_raw, money_bench_values, money_bench_copy,
+                     money_bench_rates;
 
 CREATE UNLOGGED TABLE money_bench_raw AS
 SELECT g AS id,
@@ -62,3 +63,17 @@ SELECT * FROM money_bench_values WHERE value = money_parse('USD 555.17');
 
 \echo prepare COPY source
 CREATE UNLOGGED TABLE money_bench_copy AS TABLE money_bench_values WITH NO DATA;
+
+\echo prepare indexed historical rates
+CREATE UNLOGGED TABLE money_bench_rates(
+    from_currency text NOT NULL,
+    to_currency text NOT NULL,
+    rate numeric NOT NULL CHECK (rate > 0),
+    valid_at timestamptz NOT NULL,
+    PRIMARY KEY (from_currency, to_currency, valid_at)
+);
+INSERT INTO money_bench_rates
+SELECT 'USD', 'EUR', 0.80 + (g % 100)::numeric / 10000,
+       CURRENT_TIMESTAMP - (g || ' hours')::interval
+FROM generate_series(1, 10000) AS g;
+ANALYZE money_bench_rates;

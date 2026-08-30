@@ -4,8 +4,13 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 database_url="${DATABASE_URL:-postgres:///postgres}"
 duration="${BENCH_DURATION:-30}"
+client_list="${BENCH_CLIENTS:-4 16 64}"
+jobs="${BENCH_JOBS:-4}"
+progress="${BENCH_PROGRESS:-10}"
 copy_file="$(mktemp "${TMPDIR:-/tmp}/pg-money-copy.XXXXXX")"
 trap 'rm -f "$copy_file"' EXIT
+
+read -r -a clients <<< "$client_list"
 
 if [[ $# -gt 0 ]]; then
     sizes=("$@")
@@ -26,7 +31,17 @@ for rows in "${sizes[@]}"; do
     time psql "$database_url" -X -q \
         -c "COPY money_bench_copy FROM STDIN WITH (FORMAT binary)" < "$copy_file"
 
-    echo "indexed lookup via pgbench"
-    pgbench "$database_url" -n -M prepared -T "$duration" -c 4 -j 2 \
-        -D ROWS="$rows" -f "$project_dir/bench/lookup.sql"
+    for client_count in "${clients[@]}"; do
+        run_jobs="$jobs"
+        if (( run_jobs > client_count )); then
+            run_jobs="$client_count"
+        fi
+
+        for workload in lookup hot_path exchange_lookup; do
+            echo "pgbench workload=$workload clients=$client_count jobs=$run_jobs"
+            pgbench "$database_url" -n -M prepared -T "$duration" \
+                -c "$client_count" -j "$run_jobs" -P "$progress" -r \
+                -D ROWS="$rows" -f "$project_dir/bench/$workload.sql"
+        done
+    done
 done
