@@ -43,7 +43,7 @@ pgrx::pg_module_magic!();
 
 #[cfg(not(feature = "fuzzing"))]
 extension_sql!(
-    r#"
+    r"
     CREATE CAST (varchar AS money_with_currency) WITH INOUT;
     CREATE CAST (money_with_currency AS varchar) WITH INOUT AS ASSIGNMENT;
 
@@ -86,7 +86,7 @@ extension_sql!(
         COMBINEFUNC = money_aggregate_combinefn,
         PARALLEL = SAFE
     );
-    "#,
+    ",
     name = "money_sql_surface",
     requires = [
         money_with_currency,
@@ -105,7 +105,7 @@ extension_sql!(
 
 #[cfg(not(feature = "fuzzing"))]
 extension_sql!(
-    r#"
+    r"
     ALTER OPERATOR FAMILY money_with_currency_hash_ops USING hash
         ADD FUNCTION 2 (money_with_currency, money_with_currency)
         money_with_currency_hash_extended(money_with_currency, bigint);
@@ -114,7 +114,7 @@ extension_sql!(
         RECEIVE = money_with_currency_recv_safe,
         SEND = money_with_currency_send_safe
     );
-    "#,
+    ",
     name = "money_binary_and_hash_support",
     finalize
 );
@@ -123,6 +123,7 @@ extension_sql!(
 pub mod pg_test {
     pub fn setup(_options: Vec<&str>) {}
 
+    #[must_use]
     pub fn postgresql_conf_options() -> Vec<&'static str> {
         vec![]
     }

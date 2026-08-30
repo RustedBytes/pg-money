@@ -8,6 +8,10 @@ use rust_decimal::Decimal;
 use rusty_money::{ExchangeRate, FormattableCurrency};
 
 #[pg_extern(immutable, parallel_safe)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive owned decoded numeric datums"
+)]
 pub(crate) fn money_exchange(
     value: money_with_currency,
     target_currency: &str,
@@ -38,6 +42,10 @@ fn qualified_relation(relation: &PgRelation) -> String {
 }
 
 #[pg_extern(stable)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive an owned relation handle"
+)]
 pub(crate) fn money_exchange_at(
     value: money_with_currency,
     target_currency: &str,

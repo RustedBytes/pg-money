@@ -6,6 +6,10 @@ use pgrx::{AnyNumeric, JsonB};
 use serde_json::json;
 
 #[pg_extern(immutable, parallel_safe)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive owned decoded numeric datums"
+)]
 pub(crate) fn money_make(amount: AnyNumeric, currency: &str) -> money_with_currency {
     money_with_currency::from_decimal(decimal_from_numeric(&amount), currency)
         .unwrap_or_else(|error| fail_parameter(&error))

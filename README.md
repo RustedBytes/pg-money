@@ -81,9 +81,10 @@ time. It never downloads rates or infers inverse rates.
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets -- -D warnings -W clippy::pedantic
 cargo pgrx test pg18
-cargo check --manifest-path fuzz/Cargo.toml --all-targets
+cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- \
+  -D warnings -W clippy::pedantic
 ```
 
 For release-performance checks, install the release build into a disposable

@@ -219,7 +219,7 @@ fn binary_format_is_stable_and_validated() {
     let maximum = money_with_currency::from_decimal(Decimal::MAX, "USD").unwrap();
     let one = money_with_currency::from_decimal(Decimal::ONE, "USD").unwrap();
     assert_eq!(
-        maximum.clone().checked_add(one),
+        maximum.checked_add(one),
         Err(rusty_money::MoneyError::Overflow)
     );
     assert_eq!(
@@ -260,7 +260,7 @@ mod properties {
                 left.as_money().sub(right.as_money()).unwrap()
             );
 
-            prop_assert_eq!(left.clone().checked_add(right.clone()).unwrap(), expected_sum);
+            prop_assert_eq!(left.checked_add(right).unwrap(), expected_sum);
             prop_assert_eq!(left.checked_sub(right).unwrap(), expected_difference);
         }
 
@@ -281,7 +281,7 @@ mod properties {
                 .div(scalar)
                 .map(money_with_currency::from_money);
 
-            prop_assert_eq!(value.clone().checked_mul(scalar), expected_product);
+            prop_assert_eq!(value.checked_mul(scalar), expected_product);
             prop_assert_eq!(value.checked_div(scalar), expected_quotient);
         }
     }

@@ -27,6 +27,10 @@ pub(crate) fn money_subtract(
 }
 
 #[pg_extern(immutable, parallel_safe)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive owned decoded numeric datums"
+)]
 pub(crate) fn money_multiply(
     value: money_with_currency,
     multiplier: AnyNumeric,
@@ -36,6 +40,10 @@ pub(crate) fn money_multiply(
 }
 
 #[pg_extern(immutable, parallel_safe)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive owned decoded numeric datums"
+)]
 pub(crate) fn money_divide(value: money_with_currency, divisor: AnyNumeric) -> money_with_currency {
     let divisor = decimal_from_numeric(&divisor);
     unwrap_value(value.checked_div(divisor))
@@ -76,13 +84,13 @@ pub(crate) fn money_round(
     digits: i32,
     strategy: default!(money_rounding, "'half_even'"),
 ) -> money_with_currency {
-    if !(0..=Decimal::MAX_SCALE as i32).contains(&digits) {
+    if !(0..=Decimal::MAX_SCALE.cast_signed()).contains(&digits) {
         fail_parameter("digits must be between 0 and 28");
     }
     value.with_decimal(
         value
             .decimal()
-            .round_dp_with_strategy(digits as u32, strategy.into()),
+            .round_dp_with_strategy(digits.cast_unsigned(), strategy.into()),
     )
 }
 

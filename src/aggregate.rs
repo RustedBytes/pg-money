@@ -66,13 +66,12 @@ pub(crate) fn money_aggregate_combinefn(
     right: Option<money_aggregate_state>,
 ) -> money_aggregate_state {
     let left = left.unwrap_or_default();
-    match right {
-        Some(money_aggregate_state {
-            count,
-            total: Some(total),
-        }) => merge_aggregate_value(left, total, count),
-        _ => left,
+    if let Some(state) = right
+        && let Some(total) = state.total
+    {
+        return merge_aggregate_value(left, total, state.count);
     }
+    left
 }
 
 #[pg_extern(immutable, parallel_safe)]

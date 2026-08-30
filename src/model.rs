@@ -22,7 +22,7 @@ pub(crate) const MAX_BINARY_BYTES: usize = 128;
 const MAX_INPUT_BYTES: usize = 128;
 
 /// A precise decimal amount paired with an ISO-4217 currency.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     not(feature = "fuzzing"),
     derive(PostgresType, PostgresEq, PostgresOrd, PostgresHash)

@@ -16,7 +16,8 @@ pub(crate) fn numeric_from_decimal(input: Decimal) -> AnyNumeric {
 pub(crate) fn unwrap_money(
     result: Result<Money<'static, iso::Currency>, MoneyError>,
 ) -> money_with_currency {
-    result
-        .map(money_with_currency::from_money)
-        .unwrap_or_else(|error| fail_parameter(&error.to_string()))
+    result.map_or_else(
+        |error| fail_parameter(&error.to_string()),
+        money_with_currency::from_money,
+    )
 }

@@ -18,18 +18,19 @@ pub(crate) fn money_with_currency_recv_safe(mut internal: Internal) -> money_wit
     if buffer.cursor < 0 || buffer.len < buffer.cursor {
         fail_binary("invalid protocol cursor");
     }
-    let remaining = (buffer.len - buffer.cursor) as usize;
+    let remaining = usize::try_from(buffer.len - buffer.cursor)
+        .unwrap_or_else(|_| fail_binary("invalid protocol length"));
     if remaining == 0 || remaining > MAX_BINARY_BYTES {
         fail_binary(&format!(
             "payload length must be between 1 and {MAX_BINARY_BYTES} bytes"
         ));
     }
-    // SAFETY: StringInfoData guarantees `data` is valid for `len` bytes.
-    let bytes = unsafe {
-        std::slice::from_raw_parts(
-            buffer.data.add(buffer.cursor as usize).cast::<u8>(),
-            remaining,
-        )
+    let cursor =
+        usize::try_from(buffer.cursor).unwrap_or_else(|_| fail_binary("invalid protocol cursor"));
+    let bytes = {
+        // SAFETY: StringInfoData guarantees `data` is valid for `len` bytes, and
+        // the validated nonnegative cursor plus `remaining` stays within `len`.
+        unsafe { std::slice::from_raw_parts(buffer.data.add(cursor).cast::<u8>(), remaining) }
     };
     let decoded =
         serde_cbor::from_slice(bytes).unwrap_or_else(|error| fail_binary(&error.to_string()));
@@ -39,9 +40,9 @@ pub(crate) fn money_with_currency_recv_safe(mut internal: Internal) -> money_wit
 
 #[pg_extern(immutable, strict, parallel_safe)]
 pub(crate) fn money_with_currency_hash_extended(value: money_with_currency, seed: i64) -> i64 {
-    let mut hash = pgrx::misc::pgrx_seahash(&value) ^ seed as u64;
+    let mut hash = pgrx::misc::pgrx_seahash(&value) ^ seed.cast_unsigned();
     hash = hash.wrapping_add(0x9e37_79b9_7f4a_7c15);
     hash = (hash ^ (hash >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     hash = (hash ^ (hash >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    (hash ^ (hash >> 31)) as i64
+    (hash ^ (hash >> 31)).cast_signed()
 }
