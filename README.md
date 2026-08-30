@@ -2,10 +2,11 @@
 
 `pg_money` is a PostgreSQL 14–18 extension implemented with pgrx and
 [`rusty-money`](https://crates.io/crates/rusty-money). It provides a precise,
-currency-aware `money_with_currency` base type, safe arithmetic, B-tree/hash
-indexes, fair allocation, aggregation, formatting, and time-aware exchange-rate
-lookups. It is deliberately separate from PostgreSQL's locale-sensitive
-`pg_catalog.money` type.
+currency-aware `money_with_currency` base type, a high-throughput `money_minor`
+type backed by integer minor units, safe arithmetic, B-tree/hash indexes, fair
+allocation, aggregation, formatting, and time-aware exchange-rate lookups. It
+is deliberately separate from PostgreSQL's locale-sensitive `pg_catalog.money`
+type.
 
 ## Build and install
 
@@ -44,6 +45,11 @@ SELECT 'USD 10.00'::money_with_currency * 1.075;       -- USD 10.75
 SELECT money_round('USD 10.005', 2, 'half_up');        -- USD 10.01
 SELECT money_split('USD 10.00', 3);
 -- {"USD 3.34","USD 3.33","USD 3.33"}
+
+SELECT money_parse_localized('1.000,99', 'EUR'); -- EUR 1000.99
+SELECT money_from_minor(12345, 'USD');           -- USD 123.45
+SELECT money_minor_make(1000, 'USD') * 3;        -- USD 30.00
+SELECT * FROM money_currencies() WHERE code IN ('USD', 'EUR', 'JPY');
 ```
 
 Amounts preserve decimal precision until explicitly rounded. Addition,

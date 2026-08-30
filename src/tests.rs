@@ -1,10 +1,15 @@
-use crate::api::{money_amount, money_currency, money_parse};
+use crate::api::{
+    money_amount, money_currency, money_from_rusty_json, money_parse, money_to_rusty_json,
+};
 use crate::arithmetic::{money_add, money_round, money_rounding, money_split};
+use crate::currency::money_currency_info;
 use crate::exchange::money_exchange;
+use crate::formatting::{money_format_with, money_parse_localized, money_try_parse_localized};
+use crate::minor::{money_from_minor, money_to_minor, money_to_minor_lossy};
 #[cfg(test)]
 use crate::model::{money_with_currency, parse_value};
-use pgrx::AnyNumeric;
 use pgrx::prelude::*;
+use pgrx::{AnyNumeric, JsonB};
 #[cfg(test)]
 use rust_decimal::Decimal;
 #[cfg(test)]
@@ -22,6 +27,118 @@ mod tests {
         assert_eq!(money_parse("JPY -10.50").canonical(), "JPY -10.5");
         assert_eq!(money_currency(money_parse("EUR 1.25")), "EUR");
         assert_eq!(money_amount(money_parse("USD 1.2300")).to_string(), "1.23");
+    }
+
+    #[pg_test]
+    fn currency_catalog_and_metadata_work() {
+        let usd = money_currency_info("usd").0;
+        assert_eq!(usd["code"], "USD");
+        assert_eq!(usd["numeric_code"], "840");
+        assert_eq!(usd["exponent"], 2);
+        assert_eq!(usd["symbol"], "$");
+        assert_eq!(usd["locale"], "en-us");
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT count(*) > 150 AND count(*) = count(DISTINCT code) \
+                 FROM money_currencies()"
+            )
+            .unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT name FROM money_currencies() WHERE numeric_code = '392'"
+            )
+            .unwrap(),
+            Some("Japanese Yen".to_owned())
+        );
+    }
+
+    #[pg_test]
+    fn localized_parsing_and_custom_formatting_work() {
+        assert_eq!(
+            money_parse_localized("1.000,99", "EUR").canonical(),
+            "EUR 1000.99"
+        );
+        assert_eq!(
+            money_parse_localized("1,00,000.50", "INR").canonical(),
+            "INR 100000.50"
+        );
+        assert!(money_try_parse_localized("1,00", "USD").is_none());
+
+        let options = JsonB(serde_json::json!({
+            "digit_separator": "/",
+            "exponent_separator": ",",
+            "positions": ["sign", "space", "symbol", "amount", "space", "code"],
+            "rounding": 2,
+            "include_code": true
+        }));
+        assert_eq!(
+            money_format_with(money_parse("USD -1234.5"), options),
+            "- $1/234,50 USD"
+        );
+    }
+
+    #[pg_test]
+    fn rusty_money_json_contract_round_trips() {
+        let value = money_parse("USD 123.45");
+        let encoded = money_to_rusty_json(value);
+        assert_eq!(
+            encoded.0,
+            serde_json::json!({"amount": "123.45", "currency": "USD"})
+        );
+        assert_eq!(money_from_rusty_json(encoded).canonical(), "USD 123.45");
+    }
+
+    #[pg_test]
+    fn minor_unit_conversions_and_fast_type_work() {
+        assert_eq!(money_from_minor(12_345, "USD").canonical(), "USD 123.45");
+        assert_eq!(money_to_minor(money_parse("JPY 123")), 123);
+        assert_eq!(money_to_minor_lossy(money_parse("USD 1.239")), 123);
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT (money_minor_make(1000, 'USD') \
+                        + money_minor_make(500, 'USD'))::text"
+            )
+            .unwrap(),
+            Some("USD 15.00".to_owned())
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT ((money_minor_make(1001, 'USD') / 3::bigint) \
+                         * 3::bigint)::text"
+            )
+            .unwrap(),
+            Some("USD 9.99".to_owned())
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT money_minor_units( \
+                    ('USD 123.45'::money_with_currency)::money_minor)"
+            )
+            .unwrap(),
+            Some(12_345)
+        );
+        Spi::run(
+            "CREATE TEMP TABLE minor_index_test(value money_minor UNIQUE); \
+             INSERT INTO minor_index_test VALUES ('USD 1.00'), ('EUR 1.00'); \
+             CREATE INDEX minor_index_test_hash ON minor_index_test USING hash(value);",
+        )
+        .unwrap();
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT typreceive::regproc::text = 'money_minor_recv_safe' \
+                     AND typsend::regproc::text = 'money_minor_send_safe' \
+                 FROM pg_type WHERE typname = 'money_minor'"
+            )
+            .unwrap(),
+            Some(true)
+        );
+    }
+
+    #[pg_test(error = "Conversion would lose precision")]
+    fn strict_minor_conversion_rejects_fractional_minor_units() {
+        Spi::run("SELECT money_to_minor('USD 1.001'::money_with_currency)").unwrap();
     }
 
     #[pg_test]
