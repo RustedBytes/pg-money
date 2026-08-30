@@ -22,6 +22,7 @@ money_currency(value)     -> text
 money_is_zero(value)      -> boolean
 money_is_positive(value)  -> boolean
 money_is_negative(value)  -> boolean
+money_compare(left, right) -> integer
 money_format(value)       -> localized text
 money_to_json(value)      -> jsonb
 money_to_rusty_json(value) -> jsonb
@@ -46,9 +47,13 @@ with 18 decimal places; use `money_with_currency` for larger crypto balances.
 
 ```text
 money_minor_make(bigint, text) -> money_minor
+money_minor_from_major(bigint, text) -> money_minor
 money_minor_units(value)       -> bigint
 money_minor_currency(value)    -> text
 money_minor_format(value)      -> text
+money_minor_compare(left, right) -> integer
+money_minor_to_rusty_json(value) -> jsonb
+money_minor_from_rusty_json(jsonb) -> money_minor
 ```
 
 The type supports `+`, `-`, unary `-`, `* bigint`, `/ bigint`, predicates,
@@ -69,6 +74,7 @@ and `half_even`. `money_split(value, parts)` and
 `money_allocate(value, positive_integer_weights[])` return arrays whose minor
 units are distributed using `rusty-money`. Each call is capped at 10,000 output
 parts to prevent a single statement from requesting unbounded backend memory.
+Zero weights are rejected as an intentional SQL safety contract.
 
 `sum(money_with_currency)` and `avg(money_with_currency)` ignore NULLs, return
 NULL for empty groups, and reject mixed currencies.
@@ -78,6 +84,11 @@ NULL for empty groups, and reject mixed currencies.
 Equality is normalized currency plus decimal amount. Ordering is currency code then
 amount. Default B-tree and hash operator classes support unique constraints,
 joins, sorting, hash indexes, and hash partitioning.
+
+`money_compare(left, right)` and `money_minor_compare(left, right)` expose
+rusty-money's strict comparison and return `-1`, `0`, or `1`. They reject mixed
+currencies. The ordinary SQL comparison operators retain the total order required
+by PostgreSQL indexes.
 
 ## Exchange
 

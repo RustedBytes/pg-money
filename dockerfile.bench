@@ -25,6 +25,7 @@ RUN rustup component add clippy
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock pg_money.control install.sh ./
+COPY sql ./sql
 COPY src ./src
 RUN cargo clippy --all-targets -- -D warnings -W clippy::pedantic
 RUN ./install.sh \
@@ -34,7 +35,7 @@ RUN ./install.sh \
 FROM postgres:18-bookworm
 
 LABEL org.opencontainers.image.title="pg_money benchmark" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.3.0" \
       org.opencontainers.image.description="Disposable PostgreSQL and pgbench load environment for pg_money"
 
 # The official Debian image installs the versioned PostgreSQL client alongside

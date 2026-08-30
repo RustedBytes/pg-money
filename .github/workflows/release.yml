@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          package_name="pg_money-0.1.0-pg${{ matrix.pg }}"
+          package_name="pg_money-0.3.0-pg${{ matrix.pg }}"
           package_stage="dist/.stage-pg${{ matrix.pg }}"
           package_root="dist/${package_name}"
           archive="dist/${package_name}.tar.gz"
@@ -58,8 +58,8 @@ jobs:
           done < <(tar -tzf "$archive")
       - uses: actions/upload-artifact@v4
         with:
-          name: pg_money-0.1.0-pg${{ matrix.pg }}
-          path: dist/pg_money-0.1.0-pg${{ matrix.pg }}.tar.gz
+          name: pg_money-0.3.0-pg${{ matrix.pg }}
+          path: dist/pg_money-0.3.0-pg${{ matrix.pg }}.tar.gz
 
   publish:
     needs: package

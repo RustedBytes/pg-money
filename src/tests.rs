@@ -1,17 +1,25 @@
 use crate::api::{
     money_amount, money_currency, money_from_rusty_json, money_parse, money_to_rusty_json,
 };
-use crate::arithmetic::{money_add, money_round, money_rounding, money_split};
+use crate::arithmetic::{money_add, money_allocate, money_round, money_rounding, money_split};
+use crate::comparison::money_compare;
 use crate::currency::money_currency_info;
 use crate::exchange::money_exchange;
 use crate::formatting::{money_format_with, money_parse_localized, money_try_parse_localized};
-use crate::minor::{money_from_minor, money_to_minor, money_to_minor_lossy};
 #[cfg(test)]
-use crate::model::{money_with_currency, parse_value};
+use crate::minor::{from_minor_value, to_minor_value};
+use crate::minor::{
+    money_from_minor, money_minor_compare, money_minor_from_major, money_minor_from_rusty_json,
+    money_minor_to_rusty_json, money_minor_units, money_to_minor, money_to_minor_lossy,
+};
+#[cfg(test)]
+use crate::model::{find_currency, money_with_currency, parse_value};
 use pgrx::prelude::*;
 use pgrx::{AnyNumeric, JsonB};
 #[cfg(test)]
 use rust_decimal::Decimal;
+#[cfg(test)]
+use rusty_money::FormattableCurrency;
 #[cfg(test)]
 use std::collections::hash_map::DefaultHasher;
 #[cfg(test)]
@@ -20,6 +28,7 @@ use std::hash::{Hash, Hasher};
 #[pg_schema]
 mod tests {
     use super::*;
+    use rusty_money::Round;
 
     #[pg_test]
     fn canonical_storage_and_accessors_work() {
@@ -128,6 +137,28 @@ mod tests {
     }
 
     #[pg_test]
+    fn fast_money_construction_and_json_contract_work() {
+        let usd = money_minor_from_major(123, "USD");
+        assert_eq!(money_minor_units(usd), 12_300);
+
+        let encoded = money_minor_to_rusty_json(usd);
+        assert_eq!(
+            encoded.0,
+            serde_json::json!({"amount": "123.00", "currency": "USD"})
+        );
+        let decoded = money_minor_from_rusty_json(encoded);
+        assert_eq!(money_minor_units(decoded), 12_300);
+
+        let eth = money_minor_from_major(9, "ETH");
+        assert_eq!(money_minor_units(eth), 9_000_000_000_000_000_000_i64);
+    }
+
+    #[pg_test(error = "Arithmetic overflow")]
+    fn fast_major_constructor_reports_crypto_overflow() {
+        money_minor_from_major(10, "ETH");
+    }
+
+    #[pg_test]
     fn minor_unit_conversions_and_fast_type_work() {
         assert_eq!(money_from_minor(12_345, "USD").canonical(), "USD 123.45");
         assert_eq!(money_to_minor(money_parse("JPY 123")), 123);
@@ -178,6 +209,43 @@ mod tests {
         );
     }
 
+    #[pg_test]
+    fn strict_comparison_matches_rusty_money_without_changing_sql_order() {
+        assert_eq!(
+            money_compare(money_parse("USD 1"), money_parse("USD 2")),
+            -1
+        );
+        assert_eq!(
+            money_compare(money_parse("BTC 2"), money_parse("BTC 2.0")),
+            0
+        );
+
+        let lower = money_minor_from_major(1, "USD");
+        let higher = money_minor_from_major(2, "USD");
+        assert_eq!(money_minor_compare(lower, higher), -1);
+
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT 'EUR 999'::money_with_currency < 'USD -999'::money_with_currency"
+            )
+            .unwrap(),
+            Some(true)
+        );
+    }
+
+    #[pg_test(error = "Currency mismatch: expected USD, got EUR")]
+    fn strict_decimal_comparison_rejects_mixed_currencies() {
+        money_compare(money_parse("USD 1"), money_parse("EUR 1"));
+    }
+
+    #[pg_test(error = "Currency mismatch: expected USD, got EUR")]
+    fn strict_minor_comparison_rejects_mixed_currencies() {
+        money_minor_compare(
+            money_minor_from_major(1, "USD"),
+            money_minor_from_major(1, "EUR"),
+        );
+    }
+
     #[pg_test(error = "Conversion would lose precision")]
     fn strict_minor_conversion_rejects_fractional_minor_units() {
         Spi::run("SELECT money_to_minor('USD 1.001'::money_with_currency)").unwrap();
@@ -193,6 +261,26 @@ mod tests {
             money_round(money_parse("USD 10.005"), 2, money_rounding::half_up).canonical(),
             "USD 10.01"
         );
+
+        for input in [
+            "JPY 123.555",
+            "USD 123.555",
+            "BHD 123.555",
+            "BTC 123.555",
+            "ETH 123.555",
+        ] {
+            let value = money_parse(input);
+            for (extension_strategy, rusty_strategy) in [
+                (money_rounding::half_up, Round::HalfUp),
+                (money_rounding::half_down, Round::HalfDown),
+                (money_rounding::half_even, Round::HalfEven),
+            ] {
+                let expected = crate::model::money_with_currency::from_money(
+                    value.as_money().round(2, rusty_strategy),
+                );
+                assert_eq!(money_round(value, 2, extension_strategy), expected);
+            }
+        }
         assert_eq!(
             money_split(money_parse("USD 10"), 3)
                 .into_iter()
@@ -200,6 +288,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["USD 3.34", "USD 3.33", "USD 3.33"]
         );
+
+        for input in ["USD 10.01", "USD -10.01", "BTC 0.00000007"] {
+            let value = money_parse(input);
+            let expected = value
+                .as_money()
+                .allocate(vec![1, 2, 3])
+                .unwrap()
+                .into_iter()
+                .map(crate::model::money_with_currency::from_money)
+                .collect::<Vec<_>>();
+            assert_eq!(money_allocate(value, vec![1, 2, 3]), expected);
+        }
+    }
+
+    #[pg_test(error = "allocation weights must be positive integers")]
+    fn zero_allocation_weight_is_rejected_by_the_sql_safety_contract() {
+        money_allocate(money_parse("USD 1"), vec![1, 0, 1]);
     }
 
     #[pg_test]
@@ -443,10 +548,20 @@ mod properties {
     use super::*;
     use proptest::prelude::*;
 
+    fn representative_currency() -> impl Strategy<Value = &'static str> {
+        prop::sample::select(vec!["JPY", "USD", "BHD", "BTC", "ETH"])
+    }
+
     proptest! {
         #[test]
-        fn canonical_round_trip(mantissa in -1_000_000_000_i64..1_000_000_000, scale in 0_u32..=6) {
-            let value = money_with_currency::from_decimal(Decimal::new(mantissa, scale), "USD").unwrap();
+        fn canonical_round_trip(
+            mantissa in -1_000_000_000_i64..1_000_000_000,
+            scale in 0_u32..=18,
+            currency in representative_currency(),
+        ) {
+            let value = money_with_currency::from_decimal(
+                Decimal::new(mantissa, scale), currency
+            ).unwrap();
             prop_assert_eq!(parse_value(&value.canonical()).unwrap(), value);
         }
 
@@ -460,9 +575,10 @@ mod properties {
             left in -1_000_000_000_i64..1_000_000_000,
             right in -1_000_000_000_i64..1_000_000_000,
             scale in 0_u32..=6,
+            currency in representative_currency(),
         ) {
-            let left = money_with_currency::from_decimal(Decimal::new(left, scale), "USD").unwrap();
-            let right = money_with_currency::from_decimal(Decimal::new(right, scale), "USD").unwrap();
+            let left = money_with_currency::from_decimal(Decimal::new(left, scale), currency).unwrap();
+            let right = money_with_currency::from_decimal(Decimal::new(right, scale), currency).unwrap();
             let expected_sum = money_with_currency::from_money(
                 left.as_money().add(right.as_money()).unwrap()
             );
@@ -479,8 +595,9 @@ mod properties {
             amount in -1_000_000_i64..1_000_000,
             scalar in -10_000_i64..10_000,
             scale in 0_u32..=4,
+            currency in representative_currency(),
         ) {
-            let value = money_with_currency::from_decimal(Decimal::new(amount, scale), "USD").unwrap();
+            let value = money_with_currency::from_decimal(Decimal::new(amount, scale), currency).unwrap();
             let scalar = Decimal::new(scalar, scale);
             let expected_product = value
                 .as_money()
@@ -493,6 +610,20 @@ mod properties {
 
             prop_assert_eq!(value.checked_mul(scalar), expected_product);
             prop_assert_eq!(value.checked_div(scalar), expected_quotient);
+        }
+
+        #[test]
+        fn minor_round_trip_matches_rusty_money(
+            minor_units in any::<i64>(),
+            currency in representative_currency(),
+        ) {
+            let descriptor = find_currency(currency).unwrap();
+            let expected = rusty_money::FastMoney::from_minor(minor_units, descriptor).to_money();
+            let actual = from_minor_value(minor_units, currency).unwrap();
+
+            prop_assert_eq!(actual.decimal(), *expected.amount());
+            prop_assert_eq!(actual.currency_code(), expected.currency().code());
+            prop_assert_eq!(to_minor_value(actual).unwrap(), minor_units);
         }
     }
 }

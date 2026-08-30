@@ -12,6 +12,8 @@ mod arithmetic;
 #[cfg(not(feature = "fuzzing"))]
 mod binary;
 #[cfg(not(feature = "fuzzing"))]
+mod comparison;
+#[cfg(not(feature = "fuzzing"))]
 mod currency;
 #[cfg(not(feature = "fuzzing"))]
 mod errors;

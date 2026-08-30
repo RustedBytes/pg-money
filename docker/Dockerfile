@@ -29,7 +29,7 @@ RUN ./install.sh \
 FROM postgres:18-bookworm
 
 LABEL org.opencontainers.image.title="pg_money" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.3.0" \
       org.opencontainers.image.description="Precise PostgreSQL money type backed by rusty-money"
 
 COPY --from=builder /package/usr/lib/postgresql/18/lib/pg_money.so \

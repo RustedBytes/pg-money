@@ -9,6 +9,9 @@ allocation, aggregation, formatting, and time-aware exchange-rate lookups. It
 is deliberately separate from PostgreSQL's locale-sensitive `pg_catalog.money`
 type.
 
+See [rusty-money compatibility](docs/RUSTY_MONEY_COMPATIBILITY.md) for the
+exact SQL mapping and documented production-safety deviations.
+
 ## Build and install
 
 Prerequisites are Rust 1.96 or newer, PostgreSQL development headers, and
@@ -50,6 +53,9 @@ SELECT money_split('USD 10.00', 3);
 SELECT money_parse_localized('1.000,99', 'EUR'); -- EUR 1000.99
 SELECT money_from_minor(12345, 'USD');           -- USD 123.45
 SELECT money_minor_make(1000, 'USD') * 3;        -- USD 30.00
+SELECT money_minor_from_major(10, 'USD');        -- USD 10.00
+SELECT money_compare('USD 1', 'USD 2');          -- -1
+SELECT money_minor_to_rusty_json(money_minor_from_major(10, 'USD'));
 SELECT * FROM money_currencies() WHERE code IN ('USD', 'EUR', 'JPY');
 
 SELECT 'BTC 1.00000001'::money_with_currency;    -- BTC 1.00000001

@@ -62,19 +62,28 @@ jobs:
       - name: Test extension
         run: cargo pgrx test pg${{ matrix.pg }}
 
+      - name: Test 0.2.0 to 0.3.0 upgrade
+        if: matrix.pg == 18
+        env:
+          CI: true
+        run: ./ci/test-upgrade.sh pg18
+
       - name: Verify package contents
         run: |
           package_dir="$(mktemp -d)"
           ./install.sh \
             --pg-config "$(cargo pgrx info pg-config "${{ matrix.pg }}")" \
             --out-dir "$package_dir"
-          test "$(find "$package_dir" -name 'pg_money--0.1.0.sql' | wc -l)" -eq 1
+          test "$(find "$package_dir" -name 'pg_money--0.3.0.sql' | wc -l)" -eq 1
+          test "$(find "$package_dir" -name 'pg_money--0.2.0--0.3.0.sql' | wc -l)" -eq 1
           test "$(find "$package_dir" -name 'pg_money.control' | wc -l)" -eq 1
           test "$(find "$package_dir" -name 'pg_money.so' | wc -l)" -eq 1
 
   fuzz-smoke:
     name: Fuzz smoke tests
     runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: symbolize=0:abort_on_error=1
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain and dependencies
@@ -119,5 +128,5 @@ jobs:
           cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- \
             -D warnings -W clippy::pedantic
           for target in text_parser binary_decoder amount_parser; do
-            cargo fuzz run "$target" -- -max_total_time=15 -timeout=5
+            cargo fuzz run "$target" -- -runs=10000 -timeout=5
           done

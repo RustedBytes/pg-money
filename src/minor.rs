@@ -1,11 +1,12 @@
 use crate::catalog::Currency;
+use crate::comparison::unwrap_ordering;
 use crate::errors::{fail_binary, fail_input, fail_parameter};
 use crate::model::{
     MAX_BINARY_BYTES, STORAGE_VERSION, find_currency, money_with_currency, parse_value,
 };
-use pgrx::StringInfo;
 use pgrx::datum::Internal;
 use pgrx::prelude::*;
+use pgrx::{JsonB, StringInfo};
 use rusty_money::{FastMoney, FormattableCurrency, MoneyError};
 use serde::de::Error as _;
 use serde::ser::SerializeTuple;
@@ -155,18 +156,25 @@ impl InOutFuncs for money_minor {
     }
 }
 
+pub(crate) fn from_minor_value(
+    minor_units: i64,
+    currency: &str,
+) -> Result<money_with_currency, String> {
+    money_minor::from_units(minor_units, currency).map(|value| value.as_money())
+}
+
+pub(crate) fn to_minor_value(value: money_with_currency) -> Result<i64, MoneyError> {
+    money_minor::from_money(value).map(|minor| minor.minor_units)
+}
+
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_from_minor(minor_units: i64, currency: &str) -> money_with_currency {
-    money_minor::from_units(minor_units, currency)
-        .unwrap_or_else(|error| fail_parameter(&error))
-        .as_money()
+    from_minor_value(minor_units, currency).unwrap_or_else(|error| fail_parameter(&error))
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_to_minor(value: money_with_currency) -> i64 {
-    money_minor::from_money(value)
-        .unwrap_or_else(|error| fail_parameter(&error.to_string()))
-        .minor_units
+    to_minor_value(value).unwrap_or_else(|error| fail_parameter(&error.to_string()))
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -179,6 +187,12 @@ pub(crate) fn money_to_minor_lossy(value: money_with_currency) -> i64 {
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_minor_make(minor_units: i64, currency: &str) -> money_minor {
     money_minor::from_units(minor_units, currency).unwrap_or_else(|error| fail_parameter(&error))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_minor_from_major(major_units: i64, currency: &str) -> money_minor {
+    let currency = find_currency(currency).unwrap_or_else(|error| fail_parameter(&error));
+    unwrap_minor(FastMoney::from_major(major_units, currency).map(money_minor::from_fast))
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -204,6 +218,14 @@ pub(crate) fn money_minor_is_positive(value: money_minor) -> bool {
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_minor_is_negative(value: money_minor) -> bool {
     value.as_fast().is_negative()
+}
+
+/// Compare minor-unit amounts using rusty-money semantics, rejecting mixed currencies.
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_minor_compare(left: money_minor, right: money_minor) -> i32 {
+    let left = left.as_fast();
+    let right = right.as_fast();
+    unwrap_ordering(left.compare(&right))
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -247,6 +269,28 @@ pub(crate) fn money_minor_negate(value: money_minor) -> money_minor {
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_minor_format(value: money_minor) -> String {
     value.as_fast().to_string()
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_minor_to_rusty_json(value: money_minor) -> JsonB {
+    JsonB(
+        serde_json::to_value(value.as_fast()).unwrap_or_else(|error| {
+            fail_parameter(&format!("could not serialize minor-unit money: {error}"))
+        }),
+    )
+}
+
+#[pg_extern(immutable, parallel_safe)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "pgrx SQL functions receive an owned jsonb datum"
+)]
+pub(crate) fn money_minor_from_rusty_json(input: JsonB) -> money_minor {
+    let value: FastMoney<'static, Currency> =
+        serde_json::from_value(input.0).unwrap_or_else(|error| {
+            fail_parameter(&format!("invalid rusty-money minor-unit JSON: {error}"))
+        });
+    money_minor::from_fast(value)
 }
 
 #[pg_cast(immutable, parallel_safe)]
