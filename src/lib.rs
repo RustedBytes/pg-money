@@ -1,5 +1,6 @@
 #![cfg_attr(feature = "fuzzing", allow(dead_code, unused_imports))]
 
+mod catalog;
 mod model;
 
 #[cfg(not(feature = "fuzzing"))]

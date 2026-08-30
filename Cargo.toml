@@ -1,6 +1,6 @@
 [package]
 name = "pg_money"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -22,7 +22,7 @@ fuzzing = []
 
 [dependencies]
 pgrx = "=0.19.2"
-rusty-money = { version = "=0.5.0", features = ["fast", "serde"] }
+rusty-money = { version = "=0.5.0", features = ["crypto", "fast", "serde"] }
 rust_decimal = { version = "1.42", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use rusty_money::{FormattableCurrency, Money, MoneyError, iso};
+use rusty_money::{FormattableCurrency, Money, MoneyError};
 use serde::de::Error as _;
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -16,11 +16,13 @@ use pgrx::prelude::*;
 #[cfg(not(feature = "fuzzing"))]
 use std::ffi::CStr;
 
+use crate::catalog::{self, Currency};
+
 pub(crate) const STORAGE_VERSION: u8 = 1;
 pub(crate) const MAX_BINARY_BYTES: usize = 128;
 pub(crate) const MAX_INPUT_BYTES: usize = 128;
 
-/// A precise decimal amount paired with an ISO-4217 currency.
+/// A precise decimal amount paired with an ISO or crypto currency.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     not(feature = "fuzzing"),
@@ -31,7 +33,7 @@ pub(crate) const MAX_INPUT_BYTES: usize = 128;
 // pgrx uses the Rust identifier as the SQL type name.
 #[allow(non_camel_case_types)]
 pub struct money_with_currency {
-    currency: &'static iso::Currency,
+    currency: &'static Currency,
     amount: Decimal,
 }
 
@@ -110,11 +112,11 @@ impl money_with_currency {
         Ok(Self::from_known_currency(decimal, find_currency(currency)?))
     }
 
-    pub(crate) fn from_money(value: Money<'static, iso::Currency>) -> Self {
+    pub(crate) fn from_money(value: Money<'static, Currency>) -> Self {
         Self::from_known_currency(*value.amount(), value.currency())
     }
 
-    pub(crate) fn from_known_currency(amount: Decimal, currency: &'static iso::Currency) -> Self {
+    pub(crate) fn from_known_currency(amount: Decimal, currency: &'static Currency) -> Self {
         Self {
             currency,
             amount: amount.normalize(),
@@ -159,7 +161,7 @@ impl money_with_currency {
     }
 
     fn require_same_currency(&self, other: &Self) -> Result<(), MoneyError> {
-        // All currencies enter through `iso::find`, so equal currencies share
+        // All currencies enter through the static catalog, so equal currencies share
         // the same process-static descriptor.
         if std::ptr::eq(self.currency, other.currency) {
             Ok(())
@@ -175,7 +177,7 @@ impl money_with_currency {
         self.amount
     }
 
-    pub(crate) fn currency_ref(&self) -> &'static iso::Currency {
+    pub(crate) fn currency_ref(&self) -> &'static Currency {
         self.currency
     }
 
@@ -183,7 +185,7 @@ impl money_with_currency {
         self.currency.code()
     }
 
-    pub(crate) fn as_money(&self) -> Money<'static, iso::Currency> {
+    pub(crate) fn as_money(&self) -> Money<'static, Currency> {
         Money::from_decimal(self.decimal(), self.currency_ref())
     }
 
@@ -228,23 +230,20 @@ impl money_with_currency {
     }
 }
 
-pub(crate) fn find_currency(input: &str) -> Result<&'static iso::Currency, String> {
+pub(crate) fn find_currency(input: &str) -> Result<&'static Currency, String> {
     let input = input.trim();
-    if input.len() == 3 && input.is_ascii() {
-        let mut code = [0_u8; 3];
-        code.copy_from_slice(input.as_bytes());
-        code.make_ascii_uppercase();
+    if (3..=4).contains(&input.len()) && input.is_ascii() {
+        let mut code = [0_u8; 4];
+        code[..input.len()].copy_from_slice(input.as_bytes());
+        code[..input.len()].make_ascii_uppercase();
         // SAFETY: `code` was copied from ASCII input and ASCII uppercasing
         // preserves UTF-8 validity.
-        let code = unsafe { std::str::from_utf8_unchecked(&code) };
-        if let Some(currency) = iso::find(code) {
+        let code = unsafe { std::str::from_utf8_unchecked(&code[..input.len()]) };
+        if let Some(currency) = catalog::find(code) {
             return Ok(currency);
         }
     }
-    Err(format!(
-        "unknown ISO-4217 currency: {}",
-        input.to_ascii_uppercase()
-    ))
+    Err(format!("unknown currency: {}", input.to_ascii_uppercase()))
 }
 
 pub(crate) fn parse_decimal(input: &str) -> Result<Decimal, String> {
@@ -280,12 +279,12 @@ pub(crate) fn parse_value(input: &str) -> Result<money_with_currency, String> {
     let mut parts = input.split_ascii_whitespace();
     let currency = parts
         .next()
-        .ok_or_else(|| "expected '<ISO currency> <amount>'".to_owned())?;
+        .ok_or_else(|| "expected '<currency> <amount>'".to_owned())?;
     let amount = parts
         .next()
-        .ok_or_else(|| "expected '<ISO currency> <amount>'".to_owned())?;
-    if parts.next().is_some() || currency.len() != 3 {
-        return Err("expected '<ISO currency> <amount>'".to_owned());
+        .ok_or_else(|| "expected '<currency> <amount>'".to_owned())?;
+    if parts.next().is_some() || !(3..=4).contains(&currency.len()) {
+        return Err("expected '<currency> <amount>'".to_owned());
     }
     money_with_currency::from_decimal(parse_decimal(amount)?, currency)
 }

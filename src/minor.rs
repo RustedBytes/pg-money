@@ -1,3 +1,4 @@
+use crate::catalog::Currency;
 use crate::errors::{fail_binary, fail_input, fail_parameter};
 use crate::model::{
     MAX_BINARY_BYTES, STORAGE_VERSION, find_currency, money_with_currency, parse_value,
@@ -5,7 +6,7 @@ use crate::model::{
 use pgrx::StringInfo;
 use pgrx::datum::Internal;
 use pgrx::prelude::*;
-use rusty_money::{FastMoney, FormattableCurrency, MoneyError, iso};
+use rusty_money::{FastMoney, FormattableCurrency, MoneyError};
 use serde::de::Error as _;
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -13,14 +14,14 @@ use std::cmp::Ordering;
 use std::ffi::CStr;
 use std::hash::{Hash, Hasher};
 
-/// An i64 minor-unit amount paired with an ISO-4217 currency.
+/// An i64 minor-unit amount paired with an ISO or crypto currency.
 #[derive(Debug, Clone, Copy, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
 #[inoutfuncs]
 #[pg_binary_protocol]
 // pgrx uses the Rust identifier as the SQL type name.
 #[allow(non_camel_case_types)]
 pub struct money_minor {
-    currency: &'static iso::Currency,
+    currency: &'static Currency,
     minor_units: i64,
 }
 
@@ -89,7 +90,7 @@ impl Hash for money_minor {
 }
 
 impl money_minor {
-    fn from_known_units(minor_units: i64, currency: &'static iso::Currency) -> Self {
+    fn from_known_units(minor_units: i64, currency: &'static Currency) -> Self {
         Self {
             currency,
             minor_units,
@@ -103,7 +104,7 @@ impl money_minor {
         ))
     }
 
-    fn from_fast(value: FastMoney<'static, iso::Currency>) -> Self {
+    fn from_fast(value: FastMoney<'static, Currency>) -> Self {
         Self::from_known_units(value.minor_units(), value.currency())
     }
 
@@ -115,7 +116,7 @@ impl money_minor {
         FastMoney::from_money_lossy(value.as_money()).map(Self::from_fast)
     }
 
-    fn as_fast(&self) -> FastMoney<'static, iso::Currency> {
+    fn as_fast(&self) -> FastMoney<'static, Currency> {
         FastMoney::from_minor(self.minor_units, self.currency)
     }
 

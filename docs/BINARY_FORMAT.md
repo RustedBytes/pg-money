@@ -14,7 +14,7 @@ encode a four-element CBOR array:
 ```text
 [
   version:       unsigned integer (currently 1),
-  currency:      uppercase ISO-4217 text,
+  currency:      uppercase ISO-4217 or crypto code,
   mantissa:      array of 16 unsigned bytes in signed i128 network byte order,
   scale:         unsigned integer (0..28)
 ]
@@ -26,7 +26,7 @@ array:
 ```text
 [
   version:       unsigned integer (currently 1),
-  currency:      uppercase ISO-4217 text,
+  currency:      uppercase ISO-4217 or crypto code,
   minor_units:   signed 64-bit integer
 ]
 ```
@@ -37,4 +37,4 @@ PostgreSQL. Both types install bounded validated receive functions.
 `money_binary_format()` returns `cbor-array-v1`.
 
 Drivers without this binary codec should request text format, whose canonical
-representation is `<ISO code> <decimal amount>`.
+representation is `<currency code> <decimal amount>`.

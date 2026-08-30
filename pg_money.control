@@ -1,5 +1,5 @@
 comment = 'Precise, currency-aware money type backed by rusty-money'
-default_version = '0.1.0'
+default_version = '0.2.0'
 module_pathname = '$libdir/pg_money'
 relocatable = true
 superuser = true

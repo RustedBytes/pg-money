@@ -2,7 +2,8 @@
 
 ## Type and construction
 
-- `money_with_currency`: normalized decimal amount plus ISO-4217 currency.
+- `money_with_currency`: normalized decimal amount plus an ISO-4217 or
+  rusty-money crypto currency.
 - Canonical text: `USD 123.45`; codes are accepted case-insensitively and output uppercase.
 - `money_make(numeric, text)`, `money_parse(text)`, `money_try_parse(text)`.
 - `money_parse_localized(amount, currency)` and its non-throwing
@@ -40,6 +41,8 @@ accepts validated overrides for `digit_separator`, `exponent_separator`,
 
 `money_minor` stores an `i64` count of currency minor units and delegates
 arithmetic to rusty-money's `FastMoney`. Its canonical text remains `USD 12.34`.
+Crypto is supported, but the `i64` range is naturally narrower for currencies
+with 18 decimal places; use `money_with_currency` for larger crypto balances.
 
 ```text
 money_minor_make(bigint, text) -> money_minor
@@ -72,7 +75,7 @@ NULL for empty groups, and reject mixed currencies.
 
 ## Comparison and indexes
 
-Equality is normalized currency plus decimal amount. Ordering is ISO code then
+Equality is normalized currency plus decimal amount. Ordering is currency code then
 amount. Default B-tree and hash operator classes support unique constraints,
 joins, sorting, hash indexes, and hash partitioning.
 
@@ -89,9 +92,12 @@ the latest exact pair at or before `as_of`; see [EXCHANGE_RATES.md](EXCHANGE_RAT
 
 ## Introspection
 
-`money_currency_info(code)` returns JSON metadata. `money_currencies()` returns
-the complete compiled ISO catalog with `code`, `numeric_code`, `exponent`,
+`money_currency_info(code)` returns JSON metadata, including `kind` (`iso` or
+`crypto`) and a nullable `numeric_code`. `money_currencies()` remains the
+complete compiled ISO catalog with `code`, `numeric_code`, `exponent`,
 `minor_units`, `name`, `symbol`, `locale`, and `symbol_first` columns.
+`money_crypto_currencies()` returns all 14 rusty-money 0.5 crypto descriptors
+with the same metadata except ISO numeric code.
 
 ```text
 money_storage_version()   -> integer

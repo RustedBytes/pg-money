@@ -1,3 +1,4 @@
+use crate::catalog::Currency;
 use crate::errors::fail_parameter;
 use crate::model::{find_currency, money_with_currency};
 use crate::numeric::{decimal_from_numeric, unwrap_money};
@@ -23,7 +24,7 @@ pub(crate) fn money_exchange(
 
 fn exchange_with_rate(
     value: money_with_currency,
-    target: &'static rusty_money::iso::Currency,
+    target: &'static Currency,
     rate: Decimal,
 ) -> money_with_currency {
     if target == value.currency_ref() {

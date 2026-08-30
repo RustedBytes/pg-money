@@ -1,9 +1,10 @@
+use crate::catalog::Currency;
 use crate::errors::{fail_input, fail_parameter};
 use crate::model::{STORAGE_VERSION, money_with_currency, parse_value};
 use crate::numeric::{decimal_from_numeric, numeric_from_decimal};
 use pgrx::prelude::*;
 use pgrx::{AnyNumeric, JsonB};
-use rusty_money::{Money, iso};
+use rusty_money::Money;
 use serde_json::json;
 
 #[pg_extern(immutable, parallel_safe)]
@@ -83,7 +84,7 @@ pub(crate) fn money_to_rusty_json(value: money_with_currency) -> JsonB {
     reason = "pgrx SQL functions receive an owned jsonb datum"
 )]
 pub(crate) fn money_from_rusty_json(input: JsonB) -> money_with_currency {
-    let value: Money<'static, iso::Currency> = serde_json::from_value(input.0)
+    let value: Money<'static, Currency> = serde_json::from_value(input.0)
         .unwrap_or_else(|error| fail_parameter(&format!("invalid rusty-money JSON: {error}")));
     money_with_currency::from_money(value)
 }

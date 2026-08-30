@@ -10,8 +10,9 @@ rate          numeric NOT NULL,
 valid_at      timestamptz NOT NULL
 ```
 
-Use uppercase ISO codes and positive rates where one source unit equals `rate`
-target units. A suitable key is:
+Use uppercase codes from `money_currencies()` or `money_crypto_currencies()`
+and positive rates where one source unit equals `rate` target units. A suitable
+key is:
 
 ```sql
 PRIMARY KEY (from_currency, to_currency, valid_at)

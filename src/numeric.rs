@@ -1,8 +1,9 @@
+use crate::catalog::Currency;
 use crate::errors::fail_parameter;
 use crate::model::{money_with_currency, parse_decimal};
 use pgrx::AnyNumeric;
 use rust_decimal::Decimal;
-use rusty_money::{Money, MoneyError, iso};
+use rusty_money::{Money, MoneyError};
 
 pub(crate) fn decimal_from_numeric(input: &AnyNumeric) -> Decimal {
     // PostgreSQL already owns the normalized output buffer. Parsing it directly
@@ -16,7 +17,7 @@ pub(crate) fn numeric_from_decimal(input: Decimal) -> AnyNumeric {
 }
 
 pub(crate) fn unwrap_money(
-    result: Result<Money<'static, iso::Currency>, MoneyError>,
+    result: Result<Money<'static, Currency>, MoneyError>,
 ) -> money_with_currency {
     result.map_or_else(
         |error| fail_parameter(&error.to_string()),

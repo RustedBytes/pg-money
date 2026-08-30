@@ -25,6 +25,9 @@ mod tests {
     fn canonical_storage_and_accessors_work() {
         assert_eq!(money_parse("usd 10").canonical(), "USD 10.00");
         assert_eq!(money_parse("JPY -10.50").canonical(), "JPY -10.5");
+        assert_eq!(money_parse("btc 1.23456789").canonical(), "BTC 1.23456789");
+        assert_eq!(money_parse("ETH 1").canonical(), "ETH 1.000000000000000000");
+        assert_eq!(money_parse("usdc 2.5").canonical(), "USDC 2.500000");
         assert_eq!(money_currency(money_parse("EUR 1.25")), "EUR");
         assert_eq!(money_amount(money_parse("USD 1.2300")).to_string(), "1.23");
     }
@@ -37,6 +40,15 @@ mod tests {
         assert_eq!(usd["exponent"], 2);
         assert_eq!(usd["symbol"], "$");
         assert_eq!(usd["locale"], "en-us");
+        assert_eq!(usd["kind"], "iso");
+        let btc = money_currency_info("btc").0;
+        assert_eq!(btc["code"], "BTC");
+        assert_eq!(btc["kind"], "crypto");
+        assert_eq!(btc["numeric_code"], serde_json::Value::Null);
+        assert_eq!(btc["exponent"], 8);
+        assert_eq!(btc["minor_units"], 100_000_000_u64);
+        assert_eq!(btc["name"], "Bitcoin");
+        assert_eq!(btc["symbol"], "₿");
         assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT count(*) > 150 AND count(*) = count(DISTINCT code) \
@@ -52,6 +64,16 @@ mod tests {
             .unwrap(),
             Some("Japanese Yen".to_owned())
         );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT count(*) = 14 \
+                     AND bool_and(code = upper(code)) \
+                     AND count(*) = count(DISTINCT code) \
+                 FROM money_crypto_currencies()"
+            )
+            .unwrap(),
+            Some(true)
+        );
     }
 
     #[pg_test]
@@ -63,6 +85,10 @@ mod tests {
         assert_eq!(
             money_parse_localized("1,00,000.50", "INR").canonical(),
             "INR 100000.50"
+        );
+        assert_eq!(
+            money_parse_localized("1,000.12345678", "BTC").canonical(),
+            "BTC 1000.12345678"
         );
         assert!(money_try_parse_localized("1,00", "USD").is_none());
 
@@ -88,6 +114,17 @@ mod tests {
             serde_json::json!({"amount": "123.45", "currency": "USD"})
         );
         assert_eq!(money_from_rusty_json(encoded).canonical(), "USD 123.45");
+
+        let crypto = money_parse("USDC 123.456789");
+        let encoded = money_to_rusty_json(crypto);
+        assert_eq!(
+            encoded.0,
+            serde_json::json!({"amount": "123.456789", "currency": "USDC"})
+        );
+        assert_eq!(
+            money_from_rusty_json(encoded).canonical(),
+            "USDC 123.456789"
+        );
     }
 
     #[pg_test]
@@ -95,6 +132,11 @@ mod tests {
         assert_eq!(money_from_minor(12_345, "USD").canonical(), "USD 123.45");
         assert_eq!(money_to_minor(money_parse("JPY 123")), 123);
         assert_eq!(money_to_minor_lossy(money_parse("USD 1.239")), 123);
+        assert_eq!(
+            money_from_minor(100_000_001, "BTC").canonical(),
+            "BTC 1.00000001"
+        );
+        assert_eq!(money_to_minor(money_parse("BTC 1.00000001")), 100_000_001);
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT (money_minor_make(1000, 'USD') \
@@ -255,6 +297,15 @@ mod tests {
             .canonical(),
             "EUR 85.00"
         );
+        assert_eq!(
+            money_exchange(
+                money_parse("BTC 2"),
+                "USD",
+                AnyNumeric::try_from("50000").unwrap()
+            )
+            .canonical(),
+            "USD 100000.00"
+        );
         Spi::run(
             "CREATE TEMP TABLE rates( \
                 from_currency text, to_currency text, rate numeric, valid_at timestamptz \
@@ -377,6 +428,13 @@ fn binary_format_is_stable_and_validated() {
     assert_eq!(
         maximum.checked_div(Decimal::ZERO),
         Err(rusty_money::MoneyError::DivisionByZero)
+    );
+
+    let crypto = parse_value("BTC 1.00000001").unwrap();
+    let encoded = serde_cbor::to_vec(&crypto).unwrap();
+    assert_eq!(
+        serde_cbor::from_slice::<money_with_currency>(&encoded).unwrap(),
+        crypto
     );
 }
 

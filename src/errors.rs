@@ -6,7 +6,7 @@ pub(crate) fn fail_input(reason: &str) -> ! {
         ERROR,
         PgSqlErrorCode::ERRCODE_INVALID_TEXT_REPRESENTATION,
         format!("invalid input syntax for type money_with_currency: {reason}"),
-        "Use the locale-independent form 'USD 123.45'."
+        "Use a locale-independent form such as 'USD 123.45' or 'BTC 1.00000000'."
     );
     unreachable!()
 }
