@@ -23,7 +23,7 @@ fuzzing = []
 [dependencies]
 pgrx = "=0.19.2"
 rusty-money = { version = "=0.5.0", features = ["serde"] }
-rust_decimal = { version = "1.39", features = ["serde"] }
+rust_decimal = { version = "1.42", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_cbor = "0.11"
