@@ -15,7 +15,7 @@ mod tests {
     #[pg_test]
     fn canonical_storage_and_accessors_work() {
         assert_eq!(money_parse("usd 10").canonical(), "USD 10.00");
-        assert_eq!(money_parse("JPY -10.50").canonical(), "JPY -10.50");
+        assert_eq!(money_parse("JPY -10.50").canonical(), "JPY -10.5");
         assert_eq!(money_currency(money_parse("EUR 1.25")), "EUR");
         assert_eq!(money_amount(money_parse("USD 1.2300")).to_string(), "1.23");
     }
@@ -134,12 +134,12 @@ mod tests {
         );
     }
 
-    #[pg_test(error = "Currency mismatch")]
+    #[pg_test(error = "Currency mismatch: expected USD, got EUR")]
     fn mixed_currency_arithmetic_fails() {
         Spi::run("SELECT 'USD 1'::money_with_currency + 'EUR 1'::money_with_currency").unwrap();
     }
 
-    #[pg_test(error = "Currency mismatch")]
+    #[pg_test(error = "Currency mismatch: expected USD, got EUR")]
     fn mixed_currency_aggregate_fails() {
         Spi::run(
             "SELECT sum(value) FROM (VALUES \
@@ -149,7 +149,9 @@ mod tests {
         .unwrap();
     }
 
-    #[pg_test(error = "invalid input syntax for type money_with_currency")]
+    #[pg_test(
+        error = "invalid input syntax for type money_with_currency: amount must be a plain signed decimal"
+    )]
     fn locale_dependent_type_input_is_rejected() {
         Spi::run("SELECT 'USD 1,000.00'::money_with_currency").unwrap();
     }
@@ -165,6 +167,11 @@ fn binary_format_is_stable_and_validated() {
         value
     );
     assert_eq!(value.canonical(), "USD 123.45");
+    assert_eq!(parse_value("JPY -10.50").unwrap().canonical(), "JPY -10.5");
+    assert_eq!(
+        parse_value("USD 1,000.00").unwrap_err(),
+        "amount must be a plain signed decimal"
+    );
 }
 
 #[cfg(test)]
