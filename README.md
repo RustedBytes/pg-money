@@ -1,4 +1,4 @@
-# pg_money 0.1
+# pg_money
 
 `pg_money` is a PostgreSQL 14–18 extension implemented with pgrx and
 [`rusty-money`](https://crates.io/crates/rusty-money). It provides a precise,
