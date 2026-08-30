@@ -1,0 +1,45 @@
+[package]
+name = "pg_money"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+description = "A precise, currency-aware PostgreSQL money type backed by rusty-money"
+autobins = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["pg18"]
+pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
+pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
+pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
+pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
+pg_test = []
+fuzzing = []
+
+[dependencies]
+pgrx = "=0.19.2"
+rusty-money = { version = "=0.5.0", features = ["serde"] }
+rust_decimal = { version = "1.39", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_cbor = "0.11"
+
+[dev-dependencies]
+pgrx-tests = "=0.19.2"
+proptest = "=1.11.0"
+
+[profile.release]
+panic = "unwind"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+panic = "unwind"
+
+[package.metadata.pgrx]
+extension_name = "pg_money"

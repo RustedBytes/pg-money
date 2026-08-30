@@ -1,0 +1,33 @@
+[package]
+name = "pg_money-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pg_money = { path = "..", default-features = false, features = ["pg18", "fuzzing"] }
+
+[[bin]]
+name = "text_parser"
+path = "fuzz_targets/text_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "binary_decoder"
+path = "fuzz_targets/binary_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "amount_parser"
+path = "fuzz_targets/amount_parser.rs"
+test = false
+doc = false
+bench = false

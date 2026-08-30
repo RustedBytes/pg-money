@@ -1,0 +1,115 @@
+use crate::errors::fail_parameter;
+use crate::model::money_with_currency;
+use crate::numeric::{decimal_from_numeric, unwrap_money};
+use pgrx::AnyNumeric;
+use pgrx::prelude::*;
+use rust_decimal::Decimal;
+use rusty_money::Round;
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_add(
+    left: money_with_currency,
+    right: money_with_currency,
+) -> money_with_currency {
+    unwrap_money(left.as_money().add(right.as_money()))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_subtract(
+    left: money_with_currency,
+    right: money_with_currency,
+) -> money_with_currency {
+    unwrap_money(left.as_money().sub(right.as_money()))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_multiply(
+    value: money_with_currency,
+    multiplier: AnyNumeric,
+) -> money_with_currency {
+    unwrap_money(value.as_money().mul(decimal_from_numeric(&multiplier)))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_divide(value: money_with_currency, divisor: AnyNumeric) -> money_with_currency {
+    unwrap_money(value.as_money().div(decimal_from_numeric(&divisor)))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_abs(value: money_with_currency) -> money_with_currency {
+    money_with_currency::from_money(value.as_money().abs())
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_negate(value: money_with_currency) -> money_with_currency {
+    money_with_currency::from_money(-value.as_money())
+}
+
+#[derive(Debug, Copy, Clone, PostgresEnum)]
+// pgrx uses the Rust identifier and variants as their SQL names.
+#[allow(non_camel_case_types)]
+pub enum money_rounding {
+    half_up,
+    half_down,
+    half_even,
+}
+
+impl From<money_rounding> for Round {
+    fn from(value: money_rounding) -> Self {
+        match value {
+            money_rounding::half_up => Round::HalfUp,
+            money_rounding::half_down => Round::HalfDown,
+            money_rounding::half_even => Round::HalfEven,
+        }
+    }
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_round(
+    value: money_with_currency,
+    digits: i32,
+    strategy: default!(money_rounding, "'half_even'"),
+) -> money_with_currency {
+    if !(0..=Decimal::MAX_SCALE as i32).contains(&digits) {
+        fail_parameter("digits must be between 0 and 28");
+    }
+    money_with_currency::from_money(value.as_money().round(digits as u32, strategy.into()))
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_split(value: money_with_currency, parts: i32) -> Vec<money_with_currency> {
+    let parts = u32::try_from(parts)
+        .ok()
+        .filter(|parts| *parts > 0)
+        .unwrap_or_else(|| fail_parameter("parts must be positive"));
+    value
+        .as_money()
+        .split(parts)
+        .unwrap_or_else(|error| fail_parameter(&error.to_string()))
+        .into_iter()
+        .map(money_with_currency::from_money)
+        .collect()
+}
+
+#[pg_extern(immutable, parallel_safe)]
+pub(crate) fn money_allocate(
+    value: money_with_currency,
+    weights: Vec<i32>,
+) -> Vec<money_with_currency> {
+    let weights = weights
+        .into_iter()
+        .map(|weight| {
+            u32::try_from(weight)
+                .ok()
+                .filter(|weight| *weight > 0)
+                .unwrap_or_else(|| fail_parameter("allocation weights must be positive integers"))
+        })
+        .collect::<Vec<_>>();
+    value
+        .as_money()
+        .allocate(weights)
+        .unwrap_or_else(|error| fail_parameter(&error.to_string()))
+        .into_iter()
+        .map(money_with_currency::from_money)
+        .collect()
+}

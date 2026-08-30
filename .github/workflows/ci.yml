@@ -1,0 +1,93 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-matrix:
+    name: PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [14, 15, 16, 17, 18]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust and build prerequisites
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.96.0
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang libclang-dev pkg-config libssl-dev \
+            libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt1-dev \
+            libicu-dev curl
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-pgrx
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.pgrx
+            target
+          key: pg-money-${{ runner.os }}-pg${{ matrix.pg }}-pgrx-0.19.2-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install cargo-pgrx
+        run: |
+          command -v cargo-pgrx >/dev/null || \
+            cargo install cargo-pgrx --version 0.19.2 --locked
+
+      - name: Initialize PostgreSQL ${{ matrix.pg }}
+        run: |
+          if ! cargo pgrx info pg-config "${{ matrix.pg }}" >/dev/null 2>&1; then
+            cargo pgrx init --pg${{ matrix.pg }}=download --jobs 2
+          fi
+
+      - name: Check formatting and lints
+        if: matrix.pg == 18
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --no-default-features \
+            --features pg18 -- -D warnings
+
+      - name: Test extension
+        run: cargo pgrx test pg${{ matrix.pg }}
+
+      - name: Verify package contents
+        run: |
+          package_dir="$(mktemp -d)"
+          ./install.sh \
+            --pg-config "$(cargo pgrx info pg-config "${{ matrix.pg }}")" \
+            --out-dir "$package_dir"
+          test "$(find "$package_dir" -name 'pg_money--0.1.0.sql' | wc -l)" -eq 1
+          test "$(find "$package_dir" -name 'pg_money.control' | wc -l)" -eq 1
+          test "$(find "$package_dir" -name 'pg_money.so' | wc -l)" -eq 1
+
+  fuzz-smoke:
+    name: Fuzz smoke tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and dependencies
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang libclang-dev pkg-config libssl-dev \
+            libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt1-dev \
+            libicu-dev curl
+          cargo install cargo-pgrx --version 0.19.2 --locked
+          cargo install cargo-fuzz --locked
+          cargo pgrx init --pg18=download --jobs 2
+      - name: Run every fuzz target
+        run: |
+          for target in text_parser binary_decoder amount_parser; do
+            cargo fuzz run "$target" -- -max_total_time=15 -timeout=5
+          done
