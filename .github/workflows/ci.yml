@@ -28,15 +28,18 @@ jobs:
             libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt1-dev \
             libicu-dev curl
 
-      - uses: actions/cache@v4
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/cargo-pgrx
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.pgrx
-            target
-          key: pg-money-${{ runner.os }}-pg${{ matrix.pg }}-pgrx-0.19.2-${{ hashFiles('Cargo.lock') }}
+          shared-key: postgres-matrix
+          key: pg${{ matrix.pg }}
+          cache-on-failure: true
+
+      - name: Restore PostgreSQL ${{ matrix.pg }} cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pgrx
+          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.19.2-pg${{ matrix.pg }}-v1
 
       - name: Install cargo-pgrx
         run: |
@@ -83,9 +86,34 @@ jobs:
             build-essential clang libclang-dev pkg-config libssl-dev \
             libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt1-dev \
             libicu-dev curl
-          cargo install cargo-pgrx --version 0.19.2 --locked
-          cargo install cargo-fuzz --locked
-          cargo pgrx init --pg18=download --jobs 2
+
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fuzz-smoke
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+            fuzz -> fuzz/target
+
+      - name: Restore PostgreSQL 18 cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pgrx
+          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.19.2-pg18-v1
+
+      - name: Install fuzz tooling
+        run: |
+          command -v cargo-pgrx >/dev/null || \
+            cargo install cargo-pgrx --version 0.19.2 --locked
+          command -v cargo-fuzz >/dev/null || cargo install cargo-fuzz --locked
+
+      - name: Initialize PostgreSQL 18
+        run: |
+          if ! cargo pgrx info pg-config 18 >/dev/null 2>&1; then
+            cargo pgrx init --pg18=download --jobs 2
+          fi
+
       - name: Run every fuzz target
         run: |
           cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- \
