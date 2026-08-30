@@ -28,7 +28,8 @@ ANALYZE money_bench_values;
 
 \echo storage footprint
 SELECT avg(pg_column_size(value)) AS average_value_bytes,
-       pg_size_pretty(pg_total_relation_size('money_bench_values')) AS table_and_indexes;
+       pg_size_pretty(pg_total_relation_size('money_bench_values')) AS table_and_indexes
+FROM money_bench_values;
 
 \echo predicates and accessors
 SELECT count(*) FILTER (WHERE money_is_positive(value)),
@@ -55,7 +56,9 @@ SELECT count(*) FROM (
 RESET enable_sort;
 RESET enable_indexscan;
 RESET enable_indexonlyscan;
-SELECT value FROM money_bench_values ORDER BY value LIMIT 1000;
+SELECT count(*) FROM (
+    SELECT value FROM money_bench_values ORDER BY value LIMIT 1000
+) AS ordered_values;
 
 \echo btree indexed lookup
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)

@@ -101,5 +101,24 @@ historical exchange lookup. It reports per-command latency and throughput at
 each requested concurrency. Set `BENCH_JOBS` and `BENCH_PROGRESS` to tune the
 pgbench worker count and progress interval.
 
+For a completely isolated run with PostgreSQL 18 and pgbench included, build
+and run the disposable benchmark image:
+
+```bash
+docker build -f dockerfile.bench -t pg-money-bench .
+docker run --rm --shm-size=1g \
+  -e BENCH_ROWS="100000 1000000" \
+  -e BENCH_CLIENTS="16 64 128" \
+  -e BENCH_JOBS=8 \
+  -e BENCH_DURATION=120 \
+  pg-money-bench
+```
+
+The container initializes a fresh database, installs the release extension,
+runs every benchmark workload, prints pgbench latency and throughput, and then
+shuts PostgreSQL down. Use a bind-mounted PostgreSQL 18 data directory only
+when repeatable warm-data runs are intentional; the default ephemeral database
+avoids stale benchmark state.
+
 See [the SQL API](docs/API.md), [binary format](docs/BINARY_FORMAT.md), and
 [exchange-rate contract](docs/EXCHANGE_RATES.md) for details.

@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+
+FROM rust:1.96-bookworm AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg lsb-release build-essential clang libclang-dev \
+        pkg-config libssl-dev libreadline-dev zlib1g-dev flex bison \
+        libxml2-dev libxslt1-dev libicu-dev postgresql-common \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+       | gpg --batch --yes --dearmor \
+           -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-server-dev-18 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install cargo-pgrx --version 0.19.2 --locked \
+    && cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
+RUN rustup component add clippy
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock pg_money.control install.sh ./
+COPY src ./src
+RUN cargo clippy --all-targets -- -D warnings -W clippy::pedantic
+RUN ./install.sh \
+    --pg-config /usr/lib/postgresql/18/bin/pg_config \
+    --out-dir /package
+
+FROM postgres:18-bookworm
+
+LABEL org.opencontainers.image.title="pg_money benchmark" \
+      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.description="Disposable PostgreSQL and pgbench load environment for pg_money"
+
+# The official Debian image installs the versioned PostgreSQL client alongside
+# the server. Fail the image build immediately if pgbench ever disappears.
+RUN pgbench --version
+
+COPY --from=builder /package/usr/lib/postgresql/18/lib/pg_money.so \
+    /usr/lib/postgresql/18/lib/pg_money.so
+COPY --from=builder /package/usr/share/postgresql/18/extension/pg_money* \
+    /usr/share/postgresql/18/extension/
+COPY docker/10-pg-money.sql /docker-entrypoint-initdb.d/10-pg-money.sql
+COPY bench /bench
+COPY docker/bench-entrypoint.sh /usr/local/bin/pg-money-bench
+
+RUN chmod 0755 /usr/local/bin/pg-money-bench /bench/run.sh
+
+ENV POSTGRES_DB=pg_money_bench \
+    POSTGRES_USER=postgres \
+    BENCH_ROWS="10000 100000 1000000" \
+    BENCH_CLIENTS="4 16 64" \
+    BENCH_JOBS=4 \
+    BENCH_DURATION=30 \
+    BENCH_PROGRESS=10 \
+    PG_SHARED_BUFFERS=512MB \
+    PG_MAX_CONNECTIONS=256
+
+ENTRYPOINT ["/usr/local/bin/pg-money-bench"]
