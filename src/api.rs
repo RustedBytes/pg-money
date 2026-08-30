@@ -28,22 +28,24 @@ pub(crate) fn money_amount(value: money_with_currency) -> AnyNumeric {
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_currency(value: money_with_currency) -> String {
-    value.currency
+    value.currency_code().to_owned()
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_is_zero(value: money_with_currency) -> bool {
-    value.as_money().is_zero()
+    value.decimal().is_zero()
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_is_positive(value: money_with_currency) -> bool {
-    value.as_money().is_positive()
+    let amount = value.decimal();
+    amount.is_sign_positive() && !amount.is_zero()
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_is_negative(value: money_with_currency) -> bool {
-    value.as_money().is_negative()
+    let amount = value.decimal();
+    amount.is_sign_negative() && !amount.is_zero()
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -57,7 +59,7 @@ pub(crate) fn money_to_json(value: money_with_currency) -> JsonB {
     let formatted = value.as_money().to_string();
     JsonB(json!({
         "amount": amount,
-        "currency": value.currency,
+        "currency": value.currency_code(),
         "formatted": formatted,
     }))
 }

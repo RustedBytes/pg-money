@@ -86,5 +86,15 @@ cargo pgrx test pg18
 cargo check --manifest-path fuzz/Cargo.toml --all-targets
 ```
 
+For release-performance checks, install the release build into a disposable
+PostgreSQL instance, set `DATABASE_URL`, and run:
+
+```bash
+./bench/run.sh 10000 100000 1000000
+```
+
+The benchmark covers parsing, on-disk size, predicates, arithmetic, formatting,
+SUM/AVG, equality, hashing, ordering, binary COPY, and prepared indexed lookup.
+
 See [the SQL API](docs/API.md), [binary format](docs/BINARY_FORMAT.md), and
 [exchange-rate contract](docs/EXCHANGE_RATES.md) for details.

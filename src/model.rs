@@ -1,9 +1,10 @@
 use rust_decimal::Decimal;
-use rusty_money::{FormattableCurrency, Money, iso};
+use rusty_money::{FormattableCurrency, Money, MoneyError, iso};
 use serde::de::Error as _;
 use serde::ser::SerializeTuple;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
+use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
@@ -31,10 +32,8 @@ const MAX_INPUT_BYTES: usize = 128;
 // pgrx uses the Rust identifier as the SQL type name.
 #[allow(non_camel_case_types)]
 pub struct money_with_currency {
-    version: u8,
-    pub(crate) currency: String,
-    mantissa: i128,
-    scale: u32,
+    currency: &'static iso::Currency,
+    amount: Decimal,
 }
 
 impl Serialize for money_with_currency {
@@ -43,10 +42,10 @@ impl Serialize for money_with_currency {
         S: Serializer,
     {
         let mut tuple = serializer.serialize_tuple(4)?;
-        tuple.serialize_element(&self.version)?;
-        tuple.serialize_element(&self.currency)?;
-        tuple.serialize_element(&self.mantissa.to_be_bytes())?;
-        tuple.serialize_element(&self.scale)?;
+        tuple.serialize_element(&STORAGE_VERSION)?;
+        tuple.serialize_element(self.currency_code())?;
+        tuple.serialize_element(&self.amount.mantissa().to_be_bytes())?;
+        tuple.serialize_element(&self.amount.scale())?;
         tuple.end()
     }
 }
@@ -56,22 +55,31 @@ impl<'de> Deserialize<'de> for money_with_currency {
     where
         D: Deserializer<'de>,
     {
-        let (version, currency, bytes, scale): (u8, String, [u8; 16], u32) =
+        let (version, currency, bytes, scale): (u8, &'de str, [u8; 16], u32) =
             Deserialize::deserialize(deserializer)?;
         if version != STORAGE_VERSION {
             return Err(D::Error::custom(format!(
                 "unsupported money storage version {version}"
             )));
         }
-        let decimal = Decimal::try_from_i128_with_scale(i128::from_be_bytes(bytes), scale)
+        let amount = Decimal::try_from_i128_with_scale(i128::from_be_bytes(bytes), scale)
             .map_err(D::Error::custom)?;
-        Self::from_decimal(decimal, &currency).map_err(D::Error::custom)
+        let normalized = amount.normalize();
+        if normalized.mantissa() != amount.mantissa() || normalized.scale() != amount.scale() {
+            return Err(D::Error::custom("money amount is not canonically encoded"));
+        }
+        if currency.as_bytes().iter().any(u8::is_ascii_lowercase) {
+            return Err(D::Error::custom(
+                "money currency is not canonically encoded",
+            ));
+        }
+        Self::from_decimal(amount, currency).map_err(D::Error::custom)
     }
 }
 
 impl PartialEq for money_with_currency {
     fn eq(&self, other: &Self) -> bool {
-        self.currency == other.currency && self.decimal() == other.decimal()
+        self.currency_code() == other.currency_code() && self.amount == other.amount
     }
 }
 
@@ -85,46 +93,93 @@ impl PartialOrd for money_with_currency {
 
 impl Ord for money_with_currency {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.currency
-            .cmp(&other.currency)
-            .then_with(|| self.decimal().cmp(&other.decimal()))
+        self.currency_code()
+            .cmp(other.currency_code())
+            .then_with(|| self.amount.cmp(&other.amount))
     }
 }
 
 impl Hash for money_with_currency {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.currency.hash(state);
-        self.decimal().hash(state);
+        self.currency_code().hash(state);
+        self.amount.hash(state);
     }
 }
 
 impl money_with_currency {
     pub(crate) fn from_decimal(decimal: Decimal, currency: &str) -> Result<Self, String> {
-        let currency = currency.trim().to_ascii_uppercase();
-        if iso::find(&currency).is_none() {
-            return Err(format!("unknown ISO-4217 currency: {currency}"));
-        }
-        let decimal = decimal.normalize();
-        Ok(Self {
-            version: STORAGE_VERSION,
-            currency,
-            mantissa: decimal.mantissa(),
-            scale: decimal.scale(),
-        })
+        Ok(Self::from_known_currency(decimal, find_currency(currency)?))
     }
 
     pub(crate) fn from_money(value: Money<'static, iso::Currency>) -> Self {
-        Self::from_decimal(*value.amount(), value.currency().code())
-            .expect("rusty-money returned an invalid ISO money value")
+        Self::from_known_currency(*value.amount(), value.currency())
+    }
+
+    pub(crate) fn from_known_currency(amount: Decimal, currency: &'static iso::Currency) -> Self {
+        Self {
+            currency,
+            amount: amount.normalize(),
+        }
+    }
+
+    pub(crate) fn with_decimal(&self, amount: Decimal) -> Self {
+        Self::from_known_currency(amount, self.currency)
+    }
+
+    pub(crate) fn checked_add(self, other: Self) -> Result<Self, MoneyError> {
+        self.require_same_currency(&other)?;
+        self.amount
+            .checked_add(other.amount)
+            .map(|amount| self.with_decimal(amount))
+            .ok_or(MoneyError::Overflow)
+    }
+
+    pub(crate) fn checked_sub(self, other: Self) -> Result<Self, MoneyError> {
+        self.require_same_currency(&other)?;
+        self.amount
+            .checked_sub(other.amount)
+            .map(|amount| self.with_decimal(amount))
+            .ok_or(MoneyError::Overflow)
+    }
+
+    pub(crate) fn checked_mul(self, multiplier: Decimal) -> Result<Self, MoneyError> {
+        self.amount
+            .checked_mul(multiplier)
+            .map(|amount| self.with_decimal(amount))
+            .ok_or(MoneyError::Overflow)
+    }
+
+    pub(crate) fn checked_div(self, divisor: Decimal) -> Result<Self, MoneyError> {
+        if divisor.is_zero() {
+            return Err(MoneyError::DivisionByZero);
+        }
+        self.amount
+            .checked_div(divisor)
+            .map(|amount| self.with_decimal(amount))
+            .ok_or(MoneyError::Overflow)
+    }
+
+    fn require_same_currency(&self, other: &Self) -> Result<(), MoneyError> {
+        if self.currency_code() == other.currency_code() {
+            Ok(())
+        } else {
+            Err(MoneyError::CurrencyMismatch {
+                expected: self.currency_code(),
+                actual: other.currency_code(),
+            })
+        }
     }
 
     pub(crate) fn decimal(&self) -> Decimal {
-        Decimal::try_from_i128_with_scale(self.mantissa, self.scale)
-            .expect("validated money_with_currency decimal")
+        self.amount
     }
 
     pub(crate) fn currency_ref(&self) -> &'static iso::Currency {
-        iso::find(&self.currency).expect("validated money_with_currency currency")
+        self.currency
+    }
+
+    pub(crate) fn currency_code(&self) -> &'static str {
+        self.currency.code()
     }
 
     pub(crate) fn as_money(&self) -> Money<'static, iso::Currency> {
@@ -132,24 +187,50 @@ impl money_with_currency {
     }
 
     pub(crate) fn canonical_amount(&self) -> String {
-        let mut amount = self.decimal().to_string();
-        let exponent = self.currency_ref().exponent() as usize;
-        let fraction = amount
-            .split_once('.')
-            .map(|(_, fraction)| fraction.len())
-            .unwrap_or(0);
-        if exponent > fraction {
-            if fraction == 0 {
-                amount.push('.');
-            }
-            amount.push_str(&"0".repeat(exponent - fraction));
-        }
+        let mut amount = String::with_capacity(32);
+        self.write_canonical_amount(&mut amount);
         amount
     }
 
     pub(crate) fn canonical(&self) -> String {
-        format!("{} {}", self.currency, self.canonical_amount())
+        let mut output = String::with_capacity(36);
+        output.push_str(self.currency_code());
+        output.push(' ');
+        self.write_canonical_amount(&mut output);
+        output
     }
+
+    fn write_canonical_amount(&self, output: &mut String) {
+        write!(output, "{}", self.amount).expect("writing to a String cannot fail");
+        let exponent = self.currency.exponent() as usize;
+        let scale = self.amount.scale() as usize;
+        if exponent > scale {
+            output.reserve(exponent - scale + usize::from(scale == 0));
+            if scale == 0 {
+                output.push('.');
+            }
+            output.extend(std::iter::repeat_n('0', exponent - scale));
+        }
+    }
+}
+
+pub(crate) fn find_currency(input: &str) -> Result<&'static iso::Currency, String> {
+    let input = input.trim();
+    if input.len() == 3 && input.is_ascii() {
+        let mut code = [0_u8; 3];
+        code.copy_from_slice(input.as_bytes());
+        code.make_ascii_uppercase();
+        // SAFETY: `code` was copied from ASCII input and ASCII uppercasing
+        // preserves UTF-8 validity.
+        let code = unsafe { std::str::from_utf8_unchecked(&code) };
+        if let Some(currency) = iso::find(code) {
+            return Ok(currency);
+        }
+    }
+    Err(format!(
+        "unknown ISO-4217 currency: {}",
+        input.to_ascii_uppercase()
+    ))
 }
 
 pub(crate) fn parse_decimal(input: &str) -> Result<Decimal, String> {
@@ -160,13 +241,16 @@ pub(crate) fn parse_decimal(input: &str) -> Result<Decimal, String> {
         .strip_prefix('+')
         .or_else(|| input.strip_prefix('-'))
         .unwrap_or(input);
-    if unsigned.is_empty()
-        || unsigned.matches('.').count() > 1
-        || !unsigned
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'.')
-        || unsigned == "."
-    {
+    let mut has_digit = false;
+    let mut has_decimal_point = false;
+    for byte in unsigned.bytes() {
+        match byte {
+            b'0'..=b'9' => has_digit = true,
+            b'.' if !has_decimal_point => has_decimal_point = true,
+            _ => return Err("amount must be a plain signed decimal".to_owned()),
+        }
+    }
+    if !has_digit {
         return Err("amount must be a plain signed decimal".to_owned());
     }
     Decimal::from_str(input).map_err(|_| "amount exceeds decimal precision".to_owned())

@@ -7,6 +7,10 @@ use pgrx::AnyNumeric;
 use pgrx::prelude::*;
 #[cfg(test)]
 use rust_decimal::Decimal;
+#[cfg(test)]
+use std::collections::hash_map::DefaultHasher;
+#[cfg(test)]
+use std::hash::{Hash, Hasher};
 
 #[pg_schema]
 mod tests {
@@ -155,6 +159,20 @@ mod tests {
     fn locale_dependent_type_input_is_rejected() {
         Spi::run("SELECT 'USD 1,000.00'::money_with_currency").unwrap();
     }
+
+    #[pg_test(error = "Arithmetic overflow")]
+    fn arithmetic_overflow_is_reported() {
+        Spi::run(
+            "SELECT 'USD 79228162514264337593543950335'::money_with_currency \
+                    + 'USD 1'::money_with_currency",
+        )
+        .unwrap();
+    }
+
+    #[pg_test(error = "Division by zero")]
+    fn division_by_zero_is_reported() {
+        Spi::run("SELECT 'USD 1'::money_with_currency / 0").unwrap();
+    }
 }
 
 #[cfg(test)]
@@ -162,6 +180,13 @@ mod tests {
 fn binary_format_is_stable_and_validated() {
     let value = parse_value("USD 123.45").unwrap();
     let encoded = serde_cbor::to_vec(&value).unwrap();
+    assert_eq!(
+        encoded,
+        [
+            0x84, 0x01, 0x63, b'U', b'S', b'D', 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x30, 0x18, 0x39, 0x02,
+        ]
+    );
     assert_eq!(
         serde_cbor::from_slice::<money_with_currency>(&encoded).unwrap(),
         value
@@ -171,6 +196,35 @@ fn binary_format_is_stable_and_validated() {
     assert_eq!(
         parse_value("USD 1,000.00").unwrap_err(),
         "amount must be a plain signed decimal"
+    );
+
+    let mut value_hash = DefaultHasher::new();
+    value.hash(&mut value_hash);
+    let mut logical_hash = DefaultHasher::new();
+    "USD".hash(&mut logical_hash);
+    Decimal::new(12345, 2).hash(&mut logical_hash);
+    assert_eq!(value_hash.finish(), logical_hash.finish());
+
+    assert!(std::mem::size_of::<money_with_currency>() <= 32);
+
+    let noncanonical = serde_cbor::to_vec(&(
+        1_u8,
+        "USD",
+        Decimal::new(12300, 4).mantissa().to_be_bytes(),
+        4_u32,
+    ))
+    .unwrap();
+    assert!(serde_cbor::from_slice::<money_with_currency>(&noncanonical).is_err());
+
+    let maximum = money_with_currency::from_decimal(Decimal::MAX, "USD").unwrap();
+    let one = money_with_currency::from_decimal(Decimal::ONE, "USD").unwrap();
+    assert_eq!(
+        maximum.clone().checked_add(one),
+        Err(rusty_money::MoneyError::Overflow)
+    );
+    assert_eq!(
+        maximum.checked_div(Decimal::ZERO),
+        Err(rusty_money::MoneyError::DivisionByZero)
     );
 }
 
@@ -189,6 +243,46 @@ mod properties {
         #[test]
         fn binary_decoder_never_panics(data in prop::collection::vec(any::<u8>(), 0..256)) {
             let _ = serde_cbor::from_slice::<money_with_currency>(&data);
+        }
+
+        #[test]
+        fn optimized_add_and_subtract_match_rusty_money(
+            left in -1_000_000_000_i64..1_000_000_000,
+            right in -1_000_000_000_i64..1_000_000_000,
+            scale in 0_u32..=6,
+        ) {
+            let left = money_with_currency::from_decimal(Decimal::new(left, scale), "USD").unwrap();
+            let right = money_with_currency::from_decimal(Decimal::new(right, scale), "USD").unwrap();
+            let expected_sum = money_with_currency::from_money(
+                left.as_money().add(right.as_money()).unwrap()
+            );
+            let expected_difference = money_with_currency::from_money(
+                left.as_money().sub(right.as_money()).unwrap()
+            );
+
+            prop_assert_eq!(left.clone().checked_add(right.clone()).unwrap(), expected_sum);
+            prop_assert_eq!(left.checked_sub(right).unwrap(), expected_difference);
+        }
+
+        #[test]
+        fn optimized_multiply_and_divide_match_rusty_money(
+            amount in -1_000_000_i64..1_000_000,
+            scalar in -10_000_i64..10_000,
+            scale in 0_u32..=4,
+        ) {
+            let value = money_with_currency::from_decimal(Decimal::new(amount, scale), "USD").unwrap();
+            let scalar = Decimal::new(scalar, scale);
+            let expected_product = value
+                .as_money()
+                .mul(scalar)
+                .map(money_with_currency::from_money);
+            let expected_quotient = value
+                .as_money()
+                .div(scalar)
+                .map(money_with_currency::from_money);
+
+            prop_assert_eq!(value.clone().checked_mul(scalar), expected_product);
+            prop_assert_eq!(value.checked_div(scalar), expected_quotient);
         }
     }
 }

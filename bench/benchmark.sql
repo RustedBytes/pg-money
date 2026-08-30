@@ -25,14 +25,35 @@ CREATE UNIQUE INDEX money_bench_value_idx ON money_bench_values(value);
 CREATE INDEX money_bench_value_hash_idx ON money_bench_values USING hash(value);
 ANALYZE money_bench_values;
 
-\echo arithmetic and formatting
-SELECT count(money_format(value * 1.075)) FROM money_bench_values;
+\echo storage footprint
+SELECT avg(pg_column_size(value)) AS average_value_bytes,
+       pg_size_pretty(pg_total_relation_size('money_bench_values')) AS table_and_indexes;
 
-\echo aggregate
+\echo predicates and accessors
+SELECT count(*) FILTER (WHERE money_is_positive(value)),
+       count(*) FILTER (WHERE money_is_zero(value)),
+       count(DISTINCT money_currency(value))
+FROM money_bench_values;
+
+\echo arithmetic and formatting hot path
+SELECT count(money_format(value * 1.075)) FROM money_bench_values;
+SELECT count((value + money_parse('USD 1.00')) - money_parse('USD 1.00'))
+FROM money_bench_values;
+
+\echo parallel-capable aggregate
 SELECT sum(value), avg(value) FROM money_bench_values;
 
-\echo equality and ordering
+\echo equality hashing and ordering
 SELECT count(*) FROM money_bench_values WHERE value = value;
+SET enable_sort = off;
+SET enable_indexscan = off;
+SET enable_indexonlyscan = off;
+SELECT count(*) FROM (
+    SELECT value FROM money_bench_values GROUP BY value
+) AS grouped_values;
+RESET enable_sort;
+RESET enable_indexscan;
+RESET enable_indexonlyscan;
 SELECT value FROM money_bench_values ORDER BY value LIMIT 1000;
 
 \echo btree indexed lookup

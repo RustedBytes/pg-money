@@ -1,11 +1,11 @@
 use crate::errors::fail_parameter;
-use crate::model::money_with_currency;
+use crate::model::{find_currency, money_with_currency};
 use crate::numeric::{decimal_from_numeric, unwrap_money};
 use pgrx::datetime::TimestampWithTimeZone;
 use pgrx::prelude::*;
 use pgrx::{AnyNumeric, PgRelation};
 use rust_decimal::Decimal;
-use rusty_money::{ExchangeRate, iso};
+use rusty_money::{ExchangeRate, FormattableCurrency};
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_exchange(
@@ -13,13 +13,18 @@ pub(crate) fn money_exchange(
     target_currency: &str,
     rate: AnyNumeric,
 ) -> money_with_currency {
-    let target_code = target_currency.trim().to_ascii_uppercase();
-    let target = iso::find(&target_code)
-        .unwrap_or_else(|| fail_parameter(&format!("unknown ISO-4217 currency: {target_code}")));
+    let target = find_currency(target_currency).unwrap_or_else(|error| fail_parameter(&error));
+    exchange_with_rate(value, target, decimal_from_numeric(&rate))
+}
+
+fn exchange_with_rate(
+    value: money_with_currency,
+    target: &'static rusty_money::iso::Currency,
+    rate: Decimal,
+) -> money_with_currency {
     if target == value.currency_ref() {
         fail_parameter("source and target currencies must differ");
     }
-    let rate = decimal_from_numeric(&rate);
     if rate <= Decimal::ZERO {
         fail_parameter("exchange rate must be positive");
     }
@@ -39,10 +44,7 @@ pub(crate) fn money_exchange_at(
     rate_table: PgRelation,
     as_of: default!(TimestampWithTimeZone, "CURRENT_TIMESTAMP"),
 ) -> money_with_currency {
-    let target = target_currency.trim().to_ascii_uppercase();
-    if iso::find(&target).is_none() {
-        fail_parameter(&format!("unknown ISO-4217 currency: {target}"));
-    }
+    let target = find_currency(target_currency).unwrap_or_else(|error| fail_parameter(&error));
     let table = qualified_relation(&rate_table);
     let query = format!(
         "SELECT rate::numeric FROM {table} \
@@ -52,8 +54,8 @@ pub(crate) fn money_exchange_at(
     let rate = Spi::get_one_with_args::<AnyNumeric>(
         &query,
         &[
-            value.currency.clone().into(),
-            target.clone().into(),
+            value.currency_code().into(),
+            target.code().into(),
             as_of.into(),
         ],
     )
@@ -64,9 +66,10 @@ pub(crate) fn money_exchange_at(
     })
     .unwrap_or_else(|| {
         fail_parameter(&format!(
-            "no exchange rate from {} to {target} at or before {as_of}",
-            value.currency
+            "no exchange rate from {} to {} at or before {as_of}",
+            value.currency_code(),
+            target.code()
         ))
     });
-    money_exchange(value, &target, rate)
+    exchange_with_rate(value, target, decimal_from_numeric(&rate))
 }

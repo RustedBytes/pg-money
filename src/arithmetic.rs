@@ -1,17 +1,21 @@
 use crate::errors::fail_parameter;
 use crate::model::money_with_currency;
-use crate::numeric::{decimal_from_numeric, unwrap_money};
+use crate::numeric::decimal_from_numeric;
 use pgrx::AnyNumeric;
 use pgrx::prelude::*;
-use rust_decimal::Decimal;
-use rusty_money::Round;
+use rust_decimal::{Decimal, RoundingStrategy};
+use rusty_money::MoneyError;
+
+fn unwrap_value(result: Result<money_with_currency, MoneyError>) -> money_with_currency {
+    result.unwrap_or_else(|error| fail_parameter(&error.to_string()))
+}
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_add(
     left: money_with_currency,
     right: money_with_currency,
 ) -> money_with_currency {
-    unwrap_money(left.as_money().add(right.as_money()))
+    unwrap_value(left.checked_add(right))
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -19,7 +23,7 @@ pub(crate) fn money_subtract(
     left: money_with_currency,
     right: money_with_currency,
 ) -> money_with_currency {
-    unwrap_money(left.as_money().sub(right.as_money()))
+    unwrap_value(left.checked_sub(right))
 }
 
 #[pg_extern(immutable, parallel_safe)]
@@ -27,22 +31,24 @@ pub(crate) fn money_multiply(
     value: money_with_currency,
     multiplier: AnyNumeric,
 ) -> money_with_currency {
-    unwrap_money(value.as_money().mul(decimal_from_numeric(&multiplier)))
+    let multiplier = decimal_from_numeric(&multiplier);
+    unwrap_value(value.checked_mul(multiplier))
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_divide(value: money_with_currency, divisor: AnyNumeric) -> money_with_currency {
-    unwrap_money(value.as_money().div(decimal_from_numeric(&divisor)))
+    let divisor = decimal_from_numeric(&divisor);
+    unwrap_value(value.checked_div(divisor))
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_abs(value: money_with_currency) -> money_with_currency {
-    money_with_currency::from_money(value.as_money().abs())
+    value.with_decimal(value.decimal().abs())
 }
 
 #[pg_extern(immutable, parallel_safe)]
 pub(crate) fn money_negate(value: money_with_currency) -> money_with_currency {
-    money_with_currency::from_money(-value.as_money())
+    value.with_decimal(-value.decimal())
 }
 
 #[derive(Debug, Copy, Clone, PostgresEnum)]
@@ -54,12 +60,12 @@ pub enum money_rounding {
     half_even,
 }
 
-impl From<money_rounding> for Round {
+impl From<money_rounding> for RoundingStrategy {
     fn from(value: money_rounding) -> Self {
         match value {
-            money_rounding::half_up => Round::HalfUp,
-            money_rounding::half_down => Round::HalfDown,
-            money_rounding::half_even => Round::HalfEven,
+            money_rounding::half_up => RoundingStrategy::MidpointAwayFromZero,
+            money_rounding::half_down => RoundingStrategy::MidpointTowardZero,
+            money_rounding::half_even => RoundingStrategy::MidpointNearestEven,
         }
     }
 }
@@ -73,7 +79,11 @@ pub(crate) fn money_round(
     if !(0..=Decimal::MAX_SCALE as i32).contains(&digits) {
         fail_parameter("digits must be between 0 and 28");
     }
-    money_with_currency::from_money(value.as_money().round(digits as u32, strategy.into()))
+    value.with_decimal(
+        value
+            .decimal()
+            .round_dp_with_strategy(digits as u32, strategy.into()),
+    )
 }
 
 #[pg_extern(immutable, parallel_safe)]

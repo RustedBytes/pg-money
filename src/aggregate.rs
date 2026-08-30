@@ -92,3 +92,21 @@ pub(crate) fn money_avg_finalfn(
             .map(|total| unwrap_money(total.as_money().div(Decimal::from(state.count))))
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::parse_value;
+
+    #[test]
+    fn aggregate_state_json_round_trip_uses_validated_money_decoder() {
+        let state = money_aggregate_state {
+            count: 1,
+            total: Some(parse_value("USD 123.45").unwrap()),
+        };
+        let encoded = serde_json::to_vec(&state).unwrap();
+        let decoded: money_aggregate_state = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.count, 1);
+        assert_eq!(decoded.total.unwrap().canonical(), "USD 123.45");
+    }
+}
