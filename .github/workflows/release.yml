@@ -12,19 +12,19 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        pg: [14, 15, 16, 17, 18]
+        pg: [15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
       - name: Install build toolchain
         run: |
-          rustup toolchain install 1.96.0 --profile minimal
-          rustup default 1.96.0
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
           sudo apt-get update
           sudo apt-get install -y \
             build-essential clang libclang-dev pkg-config libssl-dev \
             libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt1-dev \
             libicu-dev curl
-          cargo install cargo-pgrx --version 0.19.2 --locked
+          cargo install cargo-pgrx --version 0.20.1 --locked
           cargo pgrx init --pg${{ matrix.pg }}=download --jobs 2
       - name: Build package
         run: |

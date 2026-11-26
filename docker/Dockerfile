@@ -1,4 +1,4 @@
-FROM rust:1.96-bookworm AS builder
+FROM rust:1.99.1-bookworm AS builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -17,7 +17,7 @@ RUN install -d /usr/share/postgresql-common/pgdg \
     && apt-get install -y --no-install-recommends postgresql-server-dev-18 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install cargo-pgrx --version 0.19.2 --locked \
+RUN cargo install cargo-pgrx --version 0.20.1 --locked \
     && cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
 
 WORKDIR /build

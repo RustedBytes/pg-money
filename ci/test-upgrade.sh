@@ -10,8 +10,8 @@ project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
 
 pg_label="${1:-pg18}"
-if [[ ! "$pg_label" =~ ^pg(1[4-8])$ ]]; then
-    echo "expected a PostgreSQL label from pg14 through pg18" >&2
+if [[ ! "$pg_label" =~ ^pg(1[5-9])$ ]]; then
+    echo "expected a PostgreSQL label from pg15 through pg19" >&2
     exit 1
 fi
 pg_major="${BASH_REMATCH[1]}"

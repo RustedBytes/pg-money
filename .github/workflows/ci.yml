@@ -14,14 +14,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: [14, 15, 16, 17, 18]
+        pg: [15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust and build prerequisites
         run: |
-          rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
-          rustup default 1.96.0
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.99.1
           sudo apt-get update
           sudo apt-get install -y \
             build-essential clang libclang-dev pkg-config libssl-dev \
@@ -39,12 +39,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pgrx
-          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.19.2-pg${{ matrix.pg }}-v1
+          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.20.1-pg${{ matrix.pg }}-v1
 
       - name: Install cargo-pgrx
         run: |
           command -v cargo-pgrx >/dev/null || \
-            cargo install cargo-pgrx --version 0.19.2 --locked
+            cargo install cargo-pgrx --version 0.20.1 --locked
 
       - name: Initialize PostgreSQL ${{ matrix.pg }}
         run: |
@@ -109,12 +109,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.pgrx
-          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.19.2-pg18-v1
+          key: pg-money-pgrx-${{ runner.os }}-${{ runner.arch }}-0.20.1-pg18-v1
 
       - name: Install fuzz tooling
         run: |
           command -v cargo-pgrx >/dev/null || \
-            cargo install cargo-pgrx --version 0.19.2 --locked
+            cargo install cargo-pgrx --version 0.20.1 --locked
           command -v cargo-fuzz >/dev/null || cargo install cargo-fuzz --locked
 
       - name: Initialize PostgreSQL 18

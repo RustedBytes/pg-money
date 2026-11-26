@@ -1,6 +1,6 @@
 # pg_money
 
-`pg_money` is a PostgreSQL 14–18 extension implemented with pgrx and
+`pg_money` is a PostgreSQL 15–19 extension implemented with pgrx and
 [`rusty-money`](https://crates.io/crates/rusty-money). It provides a precise,
 currency-aware `money_with_currency` base type for ISO-4217 and crypto
 currencies, a high-throughput `money_minor`
@@ -14,11 +14,11 @@ exact SQL mapping and documented production-safety deviations.
 
 ## Build and install
 
-Prerequisites are Rust 1.96 or newer, PostgreSQL development headers, and
-`cargo-pgrx` 0.19.2.
+Prerequisites are Rust 1.99.1 or newer, PostgreSQL development headers, and
+`cargo-pgrx` 0.20.1.
 
 ```bash
-cargo install cargo-pgrx --version 0.19.2 --locked
+cargo install cargo-pgrx --version 0.20.1 --locked
 cargo pgrx init --pg18=/path/to/pg_config
 ./install.sh --pg-config /path/to/pg_config
 ```

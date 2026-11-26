@@ -1,6 +1,6 @@
 # Support policy
 
-`pg_money` 0.2 supports PostgreSQL 14–18, pgrx 0.19.2, Rust 1.96+, and
+`pg_money` supports PostgreSQL 15–19, pgrx 0.20.1, Rust 1.99.1+, and
 `rusty-money` 0.5.0's ISO and crypto currency sets. Custom application-defined
 Rust currency sets are not exposed through the PostgreSQL extension.
 
