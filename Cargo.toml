@@ -2,7 +2,7 @@
 name = "pg_money"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.99.1"
 license = "MIT"
 description = "A precise, currency-aware PostgreSQL money type backed by rusty-money"
 autobins = false
@@ -12,16 +12,16 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 default = ["pg18"]
-pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
 pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
+pg19 = ["pgrx/pg19", "pgrx-tests/pg19"]
 pg_test = []
 fuzzing = []
 
 [dependencies]
-pgrx = "=0.19.2"
+pgrx = "=0.20.1"
 rusty-money = { version = "=0.5.0", features = ["crypto", "fast", "serde"] }
 rust_decimal = { version = "1.42", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -29,7 +29,7 @@ serde_json = "1"
 serde_cbor = "0.11"
 
 [dev-dependencies]
-pgrx-tests = "=0.19.2"
+pgrx-tests = "=0.20.1"
 proptest = "=1.11.0"
 
 [profile.release]
